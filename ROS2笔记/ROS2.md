@@ -532,17 +532,18 @@ setup(
   **参数：**
 
   - **包名**：要创建的功能包的包名。自定义。名字要唯一。
-
-
-  - **编译类型**：
-    - **ament_cmake**：这是**最常用的编译类型**，它使用CMake作为构建系统。
-
-    - **ament_python**：如果你的包**只包含Python代码**，可以使用这个类型。
-
-    - **cmake**：不常用，通常用于**不遵循ament构建系统**的包。
-
-
-- **功能包的依赖**：指定你的功能包依赖的其他功能包。依赖之间用空格分隔。常见的有```rclcpp```(用于C++)、```rclpy```(用于Python)、```std_msgs```(用于标准消息定义)
+  
+  
+    - **编译类型**：
+      - **ament_cmake**：这是**最常用的编译类型**，它使用CMake作为构建系统。
+  
+      - **ament_python**：如果你的包**只包含Python代码**，可以使用这个类型。
+  
+      - **cmake**：不常用，通常用于**不遵循ament构建系统**的包。
+  
+  
+  - **功能包的依赖**：指定你的功能包依赖的其他功能包。依赖之间用空格分隔。常见的有```rclcpp```(用于C++)、```rclpy```(用于Python)、```std_msgs```(用于标准消息定义)
+  
 
 ![图片2](assets/图片2.png)
 
@@ -600,17 +601,43 @@ setup(
   ament_auto_package()
   ```
 
+  ![图片4](assets/图片4.png)
+
+
+
+### 1.1.5 编写package.xml
+
+- 因为这里没有使用其他的依赖，所以不需要添加额外的`<depend>`标签，即使用默认模板就可以
+
+  ```xml
+  <?xml version="1.0"?>
+  <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+  <package format="3">
+    <name>1-1-2target_link_libraries</name>
+    <version>0.0.0</version>
+    <description>TODO: Package description</description>
+    <maintainer email="amiya@todo.todo">amiya</maintainer>
+    <license>TODO: License declaration</license>
+  	
+    <!-- 注意这里改为ament_cmake_auto -->
+    <buildtool_depend>ament_cmake_auto</buildtool_depend>
   
+    <depend>rclcpp</depend>
+  
+    <test_depend>ament_lint_auto</test_depend>
+    <test_depend>ament_lint_common</test_depend>
+  
+    <export>
+      <build_type>ament_cmake</build_type>
+    </export>
+  </package>
+  ```
 
-### 1.1.5 填充package.xml
-
-
-
-
+  
 
 ### 1.1.6 编译运行
 
-
+![图片5](assets/图片5.png)
 
 
 
@@ -620,44 +647,570 @@ setup(
 
 - 创建**工作空间**，并在工作空间中创建**名为src的文件夹**
 
+  ![图片1](assets/图片1.png)
+
 ### 1.2.2 创建功能包
 
-【注：该演示中使用的编译类型是**ament_python**】
+> [!NOTE] 
+>
+> 该演示中使用的编译类型是**ament_python**
 
 - 在**src文件夹**里面打开**终端**，输入
 
-**ros2 pkg create 包名 --build-type 编译类型 --dependencies 功能包的依赖**
+  ```bash
+  ros2 pkg create 包名 --build-type 编译类型 --dependencies 功能包的依赖
+  ```
 
-**参数：**
+  **参数：**
 
-- **包名**：要创建的功能包的包名。自定义。名字要唯一。
+  - **包名**：要创建的功能包的包名。自定义。名字要唯一。
 
-- **编译类型**：
 
-- **ament_cmake**：这是**最常用的编译类型**，它使用CMake作为构建系统。
+  - **编译类型**：
 
-- **ament_python**：如果你的包**只包含Python代码**，可以使用这个类型。
+    - **ament_cmake**：这是**最常用的编译类型**，它使用CMake作为构建系统。
+    
+    - **ament_python**：如果你的包**只包含Python代码**，可以使用这个类型。
+    
+    - **cmake**：不常用，通常用于**不遵循ament构建系统**的包。
 
-- **cmake**：不常用，通常用于**不遵循ament构建系统**的包。
 
-- **功能包的依赖**：指定你的功能包依赖的其他功能包。依赖之间用空格分隔。常见的有**rclcpp**(用于C++)、**rclpy**(用于Python)、**std_msgs**(用于标准消息定义)
+  - **功能包的依赖**：指定你的功能包依赖的其他功能包。依赖之间用空格分隔。常见的有`rclcpp`(用于C++)、`rclpy`(用于Python)、`std_msgs`(用于标准消息定义)
+
+  
 
 ### 1.2.3 创建并编写Python文件
 
 - 在 **工作目录/src/功能包/功能包** 下创建**Python文件**
 
+  ![图片7](assets/图片7.png)
+
+
+
 ### 1.2.4 配置setup.py文件
 
 - 在第**21行**上下
 
-**格式**：**自定义名字=功能包名.Python文件名<sub>(没有后缀)</sub>:入口函数名**
+  **格式**：
 
-**(注：程序员习惯直接把节点名称用在自定义名字中)**
+  ```python
+  自定义名字=功能包名.Python文件名(没有后缀):入口函数名
+  ```
+
+  **(注：程序员习惯直接把节点名称用在自定义名字中)**
+
+  ![图片6](assets/图片6.png)
+
+
 
 ### 1.2.5 编译并运行
 
 - **成功画面**
 
+  ![图片8](assets/图片8.png)
+
+# 2 ROS2通信机制
+
+- **`话题通信`**是基于广播的**单向**数据交互模式
+
+- **`服务通信` **是基于**请求响应**的**问答式**交数据互模式
+
+- **`动作通信`**是在**请求响应**的过程中又包含**连续反馈**的数据交互模式
+
+- **`参数服务`**是基于**服务通信**的，可以在**不同节点间实现数据共享**
+
+## 2.1 话题通信
+
+### 2.1.1 发布者与订阅者怎么写
+
+#### 发布者
+
+发布者对应的**函数**：`create_publisher`
+
+**参数**（从左到右）：
+
+- **消息类型**：用于说明发布者发送的数据格式。
+
+  消息类型相当于通信双方的“数据协议”，发布者和订阅者必须保持一致。
+
+  可以使用：
+
+  - ROS2 官方提供的消息类型（如 `std_msgs.msg.String`）
+  - 按照 ROS2 接口规范自定义并生成的消息类型
+
+- **话题名称**：
+   一个字符串，用于指定消息发布到的具体话题。
+   话题名称决定了消息的“去向”，只有订阅了相同话题名称的订阅者才能接收到该消息。
+
+- **QoS 策略**：
+
+  用于描述消息传输的服务质量。
+  常见写法中默认值为 **10**，表示**发布者内部最多缓存 10 条尚未被订阅者接收的消息**，也称为队列深度。
+
+  当发布速度快于订阅者处理速度时：
+
+  - **队列未满**：新消息会被正常缓存
+  - **队列已满**：最早的消息会被丢弃，为新消息让出空间
+
+> [!NOTE]
+>
+> 当一个话题没有订阅者时，发布者仍然会发布消息，但这些消息不会被任何订阅者接收。
+
+
+
+#### 订阅者
+
+发布者对应的**函数**：`create_subscription`
+
+**参数**（从左到右）：
+
+- **消息类型**：用于说明订阅者接收的数据格式。
+
+  消息类型相当于通信双方的“数据协议”，订阅者必须与对应发布者的消息类型保持一致，否则无法正确解析消息内容。
+
+  可以使用：
+
+  - ROS2 官方提供的消息类型（如 `std_msgs.msg.String`）
+  - 按照 ROS2 接口规范自定义并生成的消息类型
+
+- **话题名称**：
+   一个字符串，用于指定订阅者监听的具体话题。
+   只有当话题名称与发布者发布的话题完全一致时，订阅者才能接收到该话题上的消息。
+
+- **回调函数**：
+   用于描述当订阅者接收到新消息时所执行的处理逻辑。
+   每当有新消息到达，该函数都会被自动调用，用于对消息进行解析、处理或触发后续行为。
+
+- **QoS 策略**：
+
+  用于描述订阅者接收消息时的服务质量要求。
+   常见写法中默认值为 **10**，表示**订阅者内部最多缓存 10 条尚未被处理的消息**，也称为队列深度。
+
+  当消息到达速度快于订阅者处理速度时：
+
+  - **队列未满**：新消息会被正常缓存
+  - **队列已满**：最早接收到但尚未处理的消息会被丢弃
+
+
+
+### 2.1.2 C++实现
+
+#### 节点之间单向传输（发布者单向传输给订阅者）
+
+**节点框架图为：**
+
+```mermaid
+graph LR
+    SayHello["节点: PubHello<br/>(里面有一个Publisher)"] -->|话题：HelloWorld| SubHello["节点: SubHello<br />(里面有一个Subscriber)"]
+```
+
+
+
+##### 1.发布者实现 
+
+- 这里的发布者节点名字为 **PubHello**
+
+  ```c++
+  #include <rclcpp/rclcpp.hpp>
+  #include <std_msgs/msg/string.hpp>
+  #include <chrono>
+  #include <rclcpp/node.hpp>
+  #include <rclcpp/publisher.hpp>
+  #include <rclcpp/timer.hpp>
+  
+  class SayHello : public rclcpp::Node{
+  public:
+      // 构造函数
+      SayHello(std::string name):rclcpp::Node(name){
+          // 创建发布者
+          say_hello = this->create_publisher<std_msgs::msg::String>("/HelloWorld",10);
+  
+          // 创建定时器，用于定时发布信息
+          say_hello_timer = this->create_wall_timer(std::chrono::milliseconds(500), std::bind(&SayHello::PubHello,this));
+      }
+  
+  private:
+      /*
+          函数
+      */
+      void PubHello(){
+          // 创建消息
+          std_msgs::msg::String msg;
+          msg.data = "你好世界";      // 我们可以发现std_msgs::msg::String有一个属性data，而data刚好是C++的std::string类型
+  
+          // 发布者发布消息
+          say_hello->publish(msg);
+  
+          // DEBUG，输出一些东西到终端，让我们知道这个PubHello函数确实被执行了
+          RCLCPP_INFO(this->get_logger(),"发布者发布了：%s",msg.data.c_str());    // c_str()表示转换字符串为c语言风格，这是ros2中输出日志的函数需要的
+      }
+  
+      /*
+          声明变量
+      */
+      // 声明一个发布者指针（其实我们理解为发布者就可以了）
+      rclcpp::Publisher<std_msgs::msg::String>::SharedPtr say_hello;
+      
+      // 声明一个定时器指针（其实我们理解为定时器就可以了）
+      // 定时器用于根据一定的频率来执行某一个回调函数，我们通过这个回调函数来使Publisher发布消息，就实现发布者按某个频率一直发布消息
+      rclcpp::TimerBase::SharedPtr say_hello_timer;
+  
+  };
+  
+  int main(int argc, char ** argv){
+      rclcpp::init(argc, argv);
+      auto node = std::make_shared<SayHello>("PubHello");
+      rclcpp::spin(node);
+      rclcpp::shutdown();
+      return 0;
+  }
+  ```
+
+
+
+##### 2.订阅者实现
+
+- 这里的订阅者节点名字为 **SubHello**
+
+  ```c++
+  #include <std_msgs/msg/string.hpp>
+  #include <functional>
+  #include <rclcpp/logging.hpp>
+  #include <rclcpp/node.hpp>
+  #include <rclcpp/rclcpp.hpp>
+  #include <rclcpp/subscription.hpp>
+  #include <std_msgs/msg/string.hpp>
+  #include <string>
+  
+  class GetHello : public rclcpp::Node{
+  public:
+      GetHello(std::string name) : rclcpp::Node(name){
+          // 创建一个订阅者
+          get_hello = this->create_subscription<std_msgs::msg::String>("/HelloWorld",10,std::bind(&GetHello::SubHello,this,std::placeholders::_1));
+      }
+  
+  private:
+      // 订阅者所需的回调函数
+      void SubHello(std_msgs::msg::String msg){
+          RCLCPP_INFO(this->get_logger(),"订阅者接收到消息：%s",msg.data.c_str());
+      }
+  
+      // 声明一个订阅者指针
+      rclcpp::Subscription<std_msgs::msg::String>::SharedPtr get_hello;
+  };
+  
+  int main(int argc, char ** argv){
+      rclcpp::init(argc, argv);
+      auto node = std::make_shared<GetHello>("SubHello");
+      rclcpp::spin(node);
+      rclcpp::shutdown();
+      return 0;
+  }
+  ```
+
+
+
+##### 3.配置CMakeLists.txt
+
+```cmake
+cmake_minimum_required(VERSION 3.8)
+project(one-way_topic_communication_cpp)
+
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+find_package(ament_cmake_auto REQUIRED)
+ament_auto_find_build_dependencies()
+
+# 添加发布者节点
+ament_auto_add_executable(PubHello src/SayHello.cpp)
+
+# 添加订阅者节点
+ament_auto_add_executable(SubHello src/GetHello.cpp)
+
+# 测试与代码规范检查相关【不必理会】
+if(BUILD_TESTING)
+  find_package(ament_lint_auto REQUIRED)
+  set(ament_cmake_copyright_FOUND TRUE)
+  set(ament_cmake_cpplint_FOUND TRUE)
+  ament_lint_auto_find_test_dependencies()
+endif()
+
+ament_auto_package()
+```
+
+
+
+##### 4.配置package.xml
+
+```xml
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>one-way_topic_communication_cpp</name>
+  <version>0.0.0</version>
+  <description>TODO: Package description</description>
+  <maintainer email="1310946137@qq.com">amiya</maintainer>
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- 只需要添加这两个依赖，其他都不用变 -->
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
+```
+
+
+
+##### 5.效果图
+
+- 左边为**发布者**，右边为**接收者**
+
+![image-20260129121941273](assets/image-20260129121941273.png)
+
+
+
+#### 节点之间双向传输
+
+- 两个节点既有**发布者**也有**接收者**
+
+- **节点图**：
+
+  ```mermaid
+  graph LR
+      SayHello["节点: Lisi<br/>(Publisher+Subscriber)"]
+      SubHello["节点: LaoWang<br/>(Publisher+Subscriber)"]
+  
+      SayHello -->|话题：/novel| SubHello
+      SubHello -->|话题：/novel_money| SayHello
+  
+  ```
+
+  
+
+##### 1.节点1实现（节点名为Lisi）
+
+- **代码**：
+
+  ```c++
+  #include "rclcpp/rclcpp.hpp"
+  #include "std_msgs/msg/string.hpp"
+  #include "std_msgs/msg/u_int32.hpp"
+  #include <functional>
+  
+  class TopicPublisher : public rclcpp::Node
+  {
+  public:
+      // 构造函数，有一个参数为节点名称
+      TopicPublisher(std::string name) : Node(name) // 有参构造函数
+      {
+          // 先来个自我介绍吧（打印日志）
+          RCLCPP_INFO(this->get_logger(), "大家好，我是%s。", name.c_str());
+  
+          // 创建发布者
+          pub_novel = this->create_publisher<std_msgs::msg::String>("novel", 10);
+          pub_novel_timer = this->create_wall_timer(std::chrono::milliseconds(500), std::bind(&TopicPublisher::PubNovel, this)); // 创建定时器，500ms为周期，定时发布
+  
+          // 创建订阅者
+          money.data = 80; // 声明初始的稿费
+          sub_money = this->create_subscription<std_msgs::msg::UInt32>("novel_money", 10, std::bind(&TopicPublisher::SubMoney, this, std::placeholders::_1));
+      }
+  
+  private:
+      // 声明话题发布者指针
+      rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_novel;
+      // 声明定时器指针
+      rclcpp::TimerBase::SharedPtr pub_novel_timer;
+  
+      // 声明总的稿费
+      std_msgs::msg::UInt32 money;
+      // 声明一个订阅者
+      rclcpp::Subscription<std_msgs::msg::UInt32>::SharedPtr sub_money;
+  
+      // 计时器回调函数（里面写发布内容）
+      void PubNovel()
+      {
+          // 创建消息
+          std_msgs::msg::String novel;
+          novel.data = "小说";
+  
+          // 日志打印
+          RCLCPP_INFO(this->get_logger(), "我已经发布了：%s", novel.data.c_str());
+  
+          // 发布消息
+          pub_novel->publish(novel);
+      }
+  
+      // 收钱的回调函数（接收者）
+      void SubMoney(const std_msgs::msg::UInt32::SharedPtr sub_money)
+      {
+          money.data += sub_money->data;
+          RCLCPP_INFO(this->get_logger(), "我已经收到%d元稿费，现在我的稿费总共有%d元", sub_money->data, money.data);
+      }
+  };
+  
+  int main(int argc, char **argv)
+  {
+      rclcpp::init(argc, argv);                               // 初始化 rclcpp
+      auto node = std::make_shared<TopicPublisher>("Lisi");   // 新建一个节点
+      rclcpp::spin(node);                           // 保持节点运行，检测到接收时退出指令
+      rclcpp::shutdown();                                    // rcl 关闭
+      return 0;
+  }
+  ```
+  
+- **注释**：
+
+  ![20260129131456839](assets/20260129131456839.png)
+
+
+
+##### 2.节点2实现（节点名为Laowang）
+
+- **代码**：
+
+  ```c++
+  #include "rclcpp/rclcpp.hpp"
+  #include "std_msgs/msg/string.hpp"
+  #include "std_msgs/msg/u_int32.hpp"
+  #include <functional>
+  
+  // 创建一个类节点，名字叫做SingleDogNode，继承自Node
+  class SingleDogNode : public rclcpp::Node
+  {
+  public:
+      // 构造函数，有一个参数为节点名称
+      SingleDogNode(std::string name) : Node(name) // 有参构造函数
+      {
+          // 打印一句自我介绍
+          RCLCPP_INFO(this->get_logger(), "大家好，我是单身狗%s。", name.c_str());
+  
+          // 创建一个订阅者来订阅李四的小说，话题名为novel
+          sub_novel = this->create_subscription<std_msgs::msg::String>("novel", 10, std::bind(&SingleDogNode::topic_callback, this, std::placeholders::_1));
+  
+          // 创建一个发布者来给稿费，话题名为novel_money
+          pub_money = this->create_publisher<std_msgs::msg::UInt32>("novel_money", 10);
+      }
+  
+  private:
+      // 声明一个订阅者（成员变量），用于订阅小说
+      rclcpp::Subscription<std_msgs::msg::String>::SharedPtr sub_novel;
+  
+      // 声明一个发布者（成员变量），用于订阅完小说后付钱
+      rclcpp::Publisher<std_msgs::msg::UInt32>::SharedPtr pub_money;
+  
+      // 收到话题数据的回调函数
+      void topic_callback(const std_msgs::msg::String::SharedPtr msg)
+      {
+          // 1. 订阅者接收数据（接收数据后发布消息）
+          RCLCPP_INFO(this->get_logger(), "朕已阅：'%s'", msg->data.c_str());
+  
+          // 2. 订阅者发布数据（这里是订阅者看完小说，给发布者打钱，其实就是发布者）
+          // 逻辑贯通：老王接收到李四的小说后，就应该给他稿费
+   
+        std_msgs::msg::UInt32 money;
+          money.data = 10;
+          pub_money->publish(money);
+          RCLCPP_INFO(this->get_logger(), "我已经发送%d元稿费", money.data);
+      }
+  };
+  
+  int main(int argc, char **argv)
+  {
+      rclcpp::init(argc, argv);                                   // 初始化rclcpp
+      auto node = std::make_shared<SingleDogNode>("LaoWang");     // 新建一个节点
+      rclcpp::spin(node);                                					// 保持节点运行，检测时候收到退出指令
+      rclcpp::shutdown();                                         // rcl关闭
+      return 0;
+  }
+  ```
+
+- **注释**：
+
+  ![20260129142832156](assets/20260129142832156.png)
+
+
+
+##### 3.配置CMakeLists.txt
+
+```cmake
+cmake_minimum_required(VERSION 3.8)
+project(one-way_topic_communication_cpp)
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+find_package(ament_cmake_auto REQUIRED)
+ament_auto_find_build_dependencies()
+
+# 添加发布者节点
+ament_auto_add_executable(Lisi src/Lisi.cpp)
+
+# 添加订阅者节点
+ament_auto_add_executable(LaoWang src/LaoWang.cpp)
+
+# 测试与代码规范检查相关【不必理会】
+if(BUILD_TESTING)
+  find_package(ament_lint_auto REQUIRED)
+  set(ament_cmake_copyright_FOUND TRUE)
+  set(ament_cmake_cpplint_FOUND TRUE)
+  ament_lint_auto_find_test_dependencies()
+endif()
+
+ament_auto_package()
+```
+
+
+
+##### 4.配置package.xml
+
+```xml
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>one-way_topic_communication_cpp</name>
+  <version>0.0.0</version>
+  <description>TODO: Package description</description>
+  <maintainer email="1310946137@qq.com">amiya</maintainer>
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- 只需要添加这两个依赖，其他都不用变 -->
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
+```
+
+
+
+##### 5.效果图
+
+![20260129131737739](assets/20260129131737739.png)
+
+
+
+### 2.1.3 Python实现
+
+#### 节点之间单向传输
 
 
 
@@ -665,66 +1218,45 @@ setup(
 
 
 
+#### 节点之间双向传输
 
-# ⅡROS2通信机制
 
-- **话题通信**是基于广播的**单向**数据交互模式
 
-- **服务通信**是基于请求响应的**问答式**交数据互模式
 
-- **动作通信**是在**请求响应**的过程中又包含**连续反馈**的数据交互模式
 
-- **参数服务**是**基于服务通信**的，可以在**不同节点间实现数据共享**
+#### 发布者实现
 
-## 1.话题通信
+- 流程：
 
-### (1)C++实现
+  - 导入消息类型
 
-#### 1)发布者与订阅者单向传输
 
-##### ①发布者实现
+  - 声明并创建发布者
 
-##### ②订阅者实现
 
-**\[这里偷懒了，没有用对应上面的发布者，但这个图我实在不舍得扔\]**
+  - 编写发布逻辑发布数据
 
-##### ③配置CMakeLists.txt
+- 函数：
 
-##### ④效果图
+  ```python
+  self.变量名 = self.create_publisher(消息的类型, 话题名称(自定义), 队列中最大的保存消息数)
+  ```
 
-#### 2)发布者与订阅者双向传输
+![图片6](https://raw.githubusercontent.com/AcidYoghurt/BlogImage/main/20260129132221506.png?token=BMEDJBIDFPWRUVIYV3KCICLJPLXMS)
 
-**【发布者既是发布者也是订阅者，订阅者既是发布者也是订阅者】**
 
-##### ①发布者实现
 
-##### ②订阅者实现
+#### 订阅者实现
 
-##### ③配置CMakeLists.txt
+- 函数：
 
-##### ④效果图
+  ```python
+  self.变量名 = self.create_subscription(消息的类型, 话题名称[自定义], 回调函数,队列中最大的保存消息数)
+  ```
 
-### (2)Python实现
+![图片7](https://raw.githubusercontent.com/AcidYoghurt/BlogImage/main/20260129132327992.png?token=BMEDJBPQOS4NLUBKPLXTT6DJPLXQW)
 
-#### 1)发布者实现
 
-**- 流程：**
-
-- 导入消息类型
-
-- 声明并创建发布者
-
-- 编写发布逻辑发布数据
-
-- **函数\[在类里面\]**：
-
-**self.变量名 = self.create_publisher(消息的类型, 话题名称<sub>(自定义)</sub>, 队列中最大的保存消息数)**
-
-#### 2)订阅者实现
-
-- **函数\[在类里面\]**：
-
-**self.变量名 = self.create_subscription(消息的类型, 话题名称<sub>(自定义)</sub>, 回调函数,队列中最大的保存消息数)**
 
 #### 3)配置.setup文件
 
