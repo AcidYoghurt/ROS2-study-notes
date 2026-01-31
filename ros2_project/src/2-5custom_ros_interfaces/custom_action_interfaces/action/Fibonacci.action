@@ -1,0 +1,10 @@
+# Goal（目标参数）
+int32 order
+
+---
+# Result（最终结果）
+int32[] sequence
+
+---
+# Feedback（执行中反馈）
+int32[] partial_sequence
