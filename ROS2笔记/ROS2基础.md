@@ -3814,7 +3814,7 @@ ros2 interface proto sensor_msgs/msg/Image
       # 生成 ROS 2 接口（msg / srv / action）
       rosidl_generate_interfaces(
         ${PROJECT_NAME}        # 接口所属的包名，一般使用当前工程名
-        "action/Test.action"         # 要生成的消息文件路径（相对于包根目录）
+        "action/Test.action"   # 要生成的消息文件路径（相对于包根目录）
         DEPENDENCIES std_msgs  # 该消息中使用到的其他消息包依赖
       )
       ```
@@ -5992,4 +5992,436 @@ ROS 2 提供了一系列 **命令行工具（CLI）** 和 **图形化工具（rq
   - 仿真
   - 教学演示
 - 不参与坐标计算，仅提供关节数据源
+
+
+
+# 7 pluginlib介绍
+
+## 7.1 pluginlib是干嘛的
+
+我们举个例子：如果我们在写一个导航系统，希望可以随时更换算法，例如：
+
+- A*规划
+
+- RRT规划
+
+- 自定义AI规划
+
+如果我们不使用pluginlib，那么我们的代码就写成：
+
+```c++
+if (type == "astar") planner = new AStar();
+else if (type == "rrt") planner = new RRT();
+```
+
+这会导致我们的代码扩展性差，也不符合面向对象编程。
+
+所以ROS2给我们提供了一个pluginlib，使用pluginlib后，主程序只依赖`抽象类`，而`抽象类的具体实现`作为插件
+
+
+
+## 7.2 pluginlib核心概念
+
+- `基类`（接口）
+
+  你要先定义一个 **抽象类**：
+
+  ```c++
+  class PlannerBase
+  {
+  public:
+    virtual void initialize() = 0;
+    virtual Path plan() = 0;
+    virtual ~PlannerBase() {}
+  };
+  ```
+
+  **注意**：
+
+  - 必须有**虚析构函数**，这是给自子类实现的接口
+  - 通常写成接口类
+
+- `插件类`
+
+  插件继承接口：
+
+  ```c++
+  class AStarPlanner : public PlannerBase
+  {
+  public:
+    void initialize() override;
+    Path plan() override;
+  };
+  ```
+
+  - **插件导出**（最关键）
+
+    在**插件类**中必须注册插件，否则 loader 找不到：
+
+    ```c++
+    #include <pluginlib/class_list_macros.hpp>
+    
+    PLUGINLIB_EXPORT_CLASS(AStarPlanner, PlannerBase)
+    ```
+
+- `插件描述 XML`
+
+  例如：
+
+  ```xml
+  <!-- 声明一个插件动态库（对应 CMake 里的 add_library 名字） -->
+  <library path="astar_planner">
+  
+      <!-- 声明一个可被 pluginlib 加载的类 -->
+      <!-- 参数： -->
+      <!-- name：插件唯一ID：代码里 createSharedInstance() 用的字符串 -->
+      <!-- type：真正的 C++ 类名（必须包含完整 namespace） -->
+      <!-- base_class_type：插件基类（必须和 ClassLoader 的基类一致） -->
+      <class
+              name="define_pluginlib/AStarPlanner"
+              type="define_pluginlib::AStarPlanner"
+              base_class_type="define_pluginlib::PlannerBase">
+  
+          <!-- 描述信息：给人看的，不影响程序运行 -->
+          <description>
+              A* 导航规划器插件
+          </description>
+      </class>
+  
+  </library>
+  ```
+
+  然后在 `package.xml`：
+
+  ```xml
+  <export>
+    <pluginlib plugin="${prefix}/plugin.xml"/>
+  </export>
+  ```
+
+- `主程序`如何加载插件
+
+  核心类：
+
+  ```c++
+  pluginlib::ClassLoader<BaseClass>
+  ```
+
+  示例：
+
+  ```c++
+  #include <pluginlib/class_loader.hpp>
+  
+  
+  pluginlib::ClassLoader<PlannerBase> loader(	// PlannerBase是上面定义的C++基类类型
+    "my_pkg",          					// package名
+    "my_pkg::PlannerBase"       // 字符串形式的基类的名字
+  );
+  
+  // 根据插件名字创建插件对象
+  auto planner = loader.createSharedInstance("my_pkg/AStarPlanner");
+  
+  // 调用插件的函数
+  planner->initialize();
+  ```
+
+
+
+
+## 7.3 代码实现
+
+> 实现的代码分为两个部分：
+>
+> - 定义插件
+> - 使用插件
+
+### 7.3.1 定义插件
+
+- 目录结构：
+
+  ```bash
+  define_pluginlib/
+  ├── CMakeLists.txt
+  ├── package.xml
+  ├── plugin.xml
+  │
+  ├── include/
+  │   └── define_pluginlib/
+  │       ├── planner_base.hpp        # 插件接口（抽象类）
+  │       └── a_star_planner.hpp      # 插件实现类的代码声明（继承抽象类的类）
+  │
+  └── src/
+      └── a_star_planner.cpp          # 插件实现类的代码实现
+  ```
+
+- 首先我们在`package.xml`中声明需要的依赖
+
+  ```xml
+  <depend>pluginlib</depend>
+  ```
+
+- 然后定义一个`抽象类`，这个抽象类就是基类
+
+  **抽象类**：包含**纯虚函数**的类（注意析构函数无论是虚析构还是纯虚析构，都需要实现）
+
+  **planner_base.hpp**
+
+  ```c++
+  #pragma once    // 头文件保护，用宏定义让文件只编译一次，防止同一个代码里面包含了多个 planner_base.hpp
+  
+  // ifdef 和 define是旧的头文件保护，现在都用pragam
+  // #ifndef PLANNER_BASE_HPP  // 如果 PLANNER_BASE_HPP 没有被定义
+  // #define PLANNER_BASE_HPP  // 定义 PLANNER_BASE_HPP 这个宏
+  
+  namespace plan_system
+  {
+      class PlannerBase
+      {
+      public:
+          virtual void initialize() = 0;
+          virtual void plan() = 0;
+          virtual ~PlannerBase() = default;
+      };
+  }
+  
+  // #endif
+  ```
+
+- 然后定义一个作为插件的`类`，这个类要继承上面定义的`抽象类`
+
+  - **a_star_planner.hpp**
+
+    ```c++
+    #pragma once    // 头文件保护，用宏定义让文件只编译一次，防止同一个代码里面包含了多个 planner_base.hpp
+    
+    // ifdef 和 define是旧的头文件保护，现在都用pragam
+    // #ifndef PLANNER_BASE_HPP  // 如果 PLANNER_BASE_HPP 没有被定义
+    // #define PLANNER_BASE_HPP  // 定义 PLANNER_BASE_HPP 这个宏
+    
+    namespace plan_system
+    {
+        class PlannerBase
+        {
+        public:
+            virtual void initialize() = 0;
+            virtual void plan() = 0;
+            virtual ~PlannerBase() = default;
+        };
+    }
+    
+    // #endif
+    ```
+
+  - **a_star_planner.cpp**
+
+    ```c++
+    #include <iostream>
+    #include <define_pluginlib/planner_base.hpp>
+    #include <define_pluginlib/a_star_planner.hpp>
+    
+    namespace plan_system
+    {
+        void AStarPlanner::initialize()
+        {
+            std::cout<<"现在使用的是A*算法"<<std::endl;
+        }
+        void AStarPlanner::plan()
+        {
+            std::cout<<"开始执行导航算法"<< std::endl;
+        }
+        AStarPlanner::~AStarPlanner() = default;
+    }
+    
+    // 导出为插件
+    #include <pluginlib/class_list_macros.hpp>
+    // 参数1：要导出的类
+    // 参数2：要导出的类的基类
+    PLUGINLIB_EXPORT_CLASS(plan_system::AStarPlanner, plan_system::PlannerBase)
+    ```
+
+- 然后我们要在**ROS2功能包**的目录下定义一个`插件描述文件`：**plugin.xml**
+
+  ```xml
+  <!-- 声明一个插件动态库（对应 CMake 里的 add_library 名字），后面给出 CMakeLists.txt -->
+  <library path="a_star_planner">
+  
+      <!-- 声明一个可被 pluginlib 加载的类 -->
+      <!-- 参数： -->
+      <!-- name：插件唯一ID：代码里 createSharedInstance() 用的字符串，这个字符串可以任意的，可以是AStarPlanner，也可以是plan_system/AStarPlanner(一般使用这种) -->
+      <!-- type：真正的 C++ 类名（必须包含完整 namespace） -->
+      <!-- base_class_type：插件基类（必须和 ClassLoader 的基类一致） -->
+      <class
+              name="plan_system/AStarPlanner"
+              type="plan_system::AStarPlanner"
+              base_class_type="plan_system::PlannerBase">
+  
+          <!-- 描述信息：给人看的，不影响程序运行 -->
+          <description>
+              A* 导航规划器插件
+          </description>
+      </class>
+  
+  </library>
+  
+  ```
+
+- 最后修改`CMakeLists.txt`
+
+  > [!NOTE]
+  >
+  > 核心有两个：
+  >
+  > - `ament_auto_add_library`：把插件代码 **打包成一个独立的.so文件** 并**导出**，使 pluginlib 能在运行时通过 dlopen 加载插件。
+  > - `pluginlib_export_plugin_description_file`：将插件描述文件注册到 ament index，使 pluginlib 能在运行时发现并加载插件。
+
+  ```cmake
+  cmake_minimum_required(VERSION 3.8)
+  project(define_pluginlib)
+  
+  # 如果使用 GCC 或 Clang 编译器，开启常用的警告选项【不必理会】
+  if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    add_compile_options(-Wall -Wextra -Wpedantic)
+  endif()
+  
+  find_package(ament_cmake_auto REQUIRED)
+  ament_auto_find_build_dependencies()
+  
+  # 导出库
+  ament_auto_add_library(
+          a_star_planner          # 【参数1】库的名字（CMake target 名）
+          # - 生成的 target 叫 my_lib
+          # - 实际生成的文件通常是 libmy_lib.so
+          # - 其他包通过 ament_target_dependencies(... my_lib) 使用它
+  
+          SHARED          # 【参数2】库的类型
+          # - SHARED：动态库（.so）
+          # - STATIC：静态库（.a）
+          # - 如果不写，默认是 SHARED（ROS2 中几乎都用 SHARED）
+  
+          src/a_star_planner.cpp  # 【参数3】库的源文件列表
+          # - 可以写多个 cpp
+          # - 只写算法/逻辑代码
+          # - 不应该包含 main()
+  )
+  
+  # 导出插件描述文件
+  # 参数1：功能包的名字
+  # 参数2：插件描述文件的位置
+  pluginlib_export_plugin_description_file(define_pluginlib plugin.xml)
+  
+  # 测试与代码规范检查相关【不必理会】
+  if(BUILD_TESTING)
+    find_package(ament_lint_auto REQUIRED)
+    set(ament_cmake_copyright_FOUND TRUE)
+    set(ament_cmake_cpplint_FOUND TRUE)
+    ament_lint_auto_find_test_dependencies()
+  endif()
+  
+  
+  ament_auto_package()
+  ```
+
+
+
+### 7.3.2 使用插件
+
+- 项目结构（其实就是一个普通的ROS2项目）：
+
+  ```bash
+  use_pluginlib
+    ├── CMakeLists.txt
+    ├── include
+    │   └── use_pluginlib
+    ├── package.xml
+    └── src
+        └── use_pluginlib.cpp
+  ```
+
+- `package.xml`里面添加依赖：
+
+  ```xml
+  <!-- 关于ros2的依赖 -->
+  <depend>rclcpp</depend>
+  <depend>pluginlib</depend>
+  
+  <!-- 包含插件基类的功能包 -->
+  <depend>define_pluginlib</depend>
+  ```
+
+- `c++代码` use_pluginlib.cpp 实现：
+
+  ```c++
+  // 导入ROS2依赖
+  #include <rclcpp/rclcpp.hpp>
+  #include <pluginlib/class_loader.hpp>
+  
+  // 导入插件接口
+  #include <define_pluginlib/planner_base.hpp>
+  
+  class test_node : public rclcpp::Node
+  {
+  public:
+      test_node() : Node("test")
+      {
+          // 使用ClassLoader
+          loader = std::make_unique<pluginlib::ClassLoader<plan_system::PlannerBase>>(    // 模板参数(这里指的是plan_system::PlannerBase)：插件接口类型（所有插件必须继承的基类）
+              "define_pluginlib",                                                         // 参数1：功能包名字
+              "plan_system::PlannerBase"                                                  // 参数2：基类的名字
+          );
+  
+          // 根据插件名字创建插件对象
+          planner = loader->createSharedInstance("plan_system/AStarPlanner");
+  
+          // 调用插件里面的函数
+          planner->initialize();
+          planner->plan();
+      }
+  private:
+      std::unique_ptr<pluginlib::ClassLoader<plan_system::PlannerBase>> loader;
+      std::shared_ptr<plan_system::PlannerBase> planner;
+  };
+  
+  
+  int main(int argc,char** argv)
+  {
+      rclcpp::init(argc,argv);
+      auto node = std::make_shared<test_node>();
+      rclcpp::spin(node);
+      rclcpp::shutdown();
+      return 0;
+  }
+  ```
+
+- `CMakeLists.txt`实现
+
+  > 依旧使用`ament_cmake_auto`
+
+  ```cmake
+  cmake_minimum_required(VERSION 3.8)
+  project(use_pluginlib)
+  
+  # 如果使用 GCC 或 Clang 编译器，开启常用的警告选项【不必理会】
+  if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    add_compile_options(-Wall -Wextra -Wpedantic)
+  endif()
+  
+  find_package(ament_cmake_auto REQUIRED)
+  ament_auto_find_build_dependencies()
+  
+  # 添加可执行文件 use_pluginlib
+  ament_auto_add_executable(
+          use_pluginlib
+          src/use_pluginlib.cpp
+  )
+  
+  # 测试与代码规范检查相关【不必理会】
+  if(BUILD_TESTING)
+    find_package(ament_lint_auto REQUIRED)
+    set(ament_cmake_copyright_FOUND TRUE)
+    set(ament_cmake_cpplint_FOUND TRUE)
+    ament_lint_auto_find_test_dependencies()
+  endif()
+  
+  ament_auto_package()
+  ```
 
