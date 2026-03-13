@@ -3938,7 +3938,91 @@ ros2 interface proto sensor_msgs/msg/Image
 
 
 
-### 2.6.2 在代码中声明参数
+### 2.6.2 在终端中操作
+
+- **查看参数**
+
+  - 查看某个节点的所有参数
+
+    ```bash
+    ros2 param list /node_name
+    ```
+
+  - 查看某个具体参数的值
+
+    ```bash
+    ros2 param get /node_name parameter_name
+    ```
+
+- **在命令行声明参数**
+
+  - 启动节点时声明参数
+
+    ```bash
+    ros2 run <package> <executable> --ros-args -p param_name:=value
+    ```
+
+    - `package`：节点所在的功能包
+    - `executable`：节点的可知性文件名
+
+  - 使用 YAML 文件声明（其实不推荐这么做，推荐在launch文件中传入yaml文件）
+
+    - 假设有一个参数文件`params.yaml`：
+
+      ```yaml
+      turtlesim:
+        ros__parameters:
+          background_r: 150
+          background_g: 86
+      ```
+
+    - 启动节点时传入YAML文件：
+
+      ```bash
+      ros2 run turtlesim turtlesim_node --ros-args --params-file params.yaml
+      ```
+
+- **运行中修改参数**
+
+  ```bash
+  ros2 param set /node_name parameter_name value
+  ```
+
+  如果节点注册了参数回调，会立即生效。
+
+- **查看参数详细信息**
+
+  ```bash
+  ros2 param describe /node_name parameter_name
+  ```
+
+  例如：
+
+  ```bash
+  $ ros2 param describe /param_server_node robot_speed
+  Parameter name: robot_speed	# 输出 参数名
+    Type: double				# 输出 参数类型
+    Constraints:				# 输出 约束条件
+  ```
+
+- 导出某个节点的当前参数
+
+  ```bash
+  ros2 param dump /node_name
+  ```
+
+  会生成一个 YAML 文件，如：
+
+  ```yaml
+  /turtlesim:
+    ros__parameters:
+      background_r: 200
+      background_g: 255
+  ```
+
+
+
+### 2.6.3 在代码中接收参数（写参数客户端）
 
 #### C++节点的写法
 
@@ -4008,7 +4092,7 @@ ros2 interface proto sensor_msgs/msg/Image
 
 
 
-#### python节点的写法：
+#### python节点的写法
 
 - **函数写法**：
 
@@ -4018,7 +4102,7 @@ ros2 interface proto sensor_msgs/msg/Image
     self.declare_parameter("参数名", 默认值)
     ```
 
-    - **参数名**：这个参数涉及到了launch文件和config文件，节点中声明的每一个参数的名字必须要和launch文件或config文件中的名字相同
+    - **参数名**：这个参数涉及到了launch文件和config文件，节点中声明的每一个参数的名字必须要和launch文件或config文件中的一个参数名字相同
 
     - **默认值(可选)**：如果ROS2在传入节点的参数中都找不到对应的参数，那么就使用默认值，一般建议添加以防止节点崩溃
 
@@ -4062,6 +4146,229 @@ ros2 interface proto sensor_msgs/msg/Image
       rclpy.shutdown()        # 当接收到退出指令时，退出spin函数，执行shutdown函数来关闭rclpy
   
   if __name__=="__main__":
+      main()
+  ```
+
+
+
+### 2.6.4 在代码中提供参数（写参数服务器）
+
+#### C++节点的写法
+
+- **函数写法**：
+
+  - **声明参数**
+
+    ```c++
+    this->declare_parameter<double>("参数名", 默认值);
+    ```
+
+    - **参数类型**：通常是C++中的变量类型（不是ROS2），但是需要注意的是ROS2不支持stl的嵌套，如`vector<vector<double>>`
+
+    - **参数名**：因为此时该C++节点变为了参数服务器，所以参数名自定义（但是要注意冲突）
+
+    - **默认值(可选)**：如果ROS2在传入节点的参数中都找不到对应的参数，那么就使用默认值，一般建议添加以防止节点崩溃
+
+  - **注册参数修改回调**
+
+    用于决定是否修改传入的参数值
+
+    ```c++
+    // 注册参数修改回调
+    OnSetParametersCallbackHandle::SharedPtr callback_handle_ = this->add_on_set_parameters_callback(
+      std::bind(&ParamServerNode::parameters_callback, this, std::placeholders::_1)
+    );
+    
+    // 参数修改回调函数
+    // 参数 parameters 是一个vector类型，包含本次参数修改请求中的所有参数（参数名 + 新值 + 类型）。这些参数还未正式写入系统，当前回调用于决定是否允许修改。
+    // 如果返回的 result.successful==true，那么系统就会修改参数
+    // 如果返回的 result.successful==false，那么系统就不修改参数
+    rcl_interfaces::msg::SetParametersResult parameters_callback(const std::vector<rclcpp::Parameter> & parameters)
+    {
+    rcl_interfaces::msg::SetParametersResult result;
+    
+    for (const auto & param : parameters)
+      if (param.get_name() == "robot_speed")
+      {
+        double value = param.as_double();
+        if (value < 0)
+        {
+          result.successful = false;
+          result.reason = "robot_speed 值在必须 大于0";
+          RCLCPP_INFO(this->get_logger(), "%s 参数非法，不修改",param.get_name().c_str());
+        }
+        else
+        {
+          result.successful = true;
+          RCLCPP_INFO(this->get_logger(), "%s 参数改变为：%.2f",param.get_name().c_str(), value);
+        }
+      }
+    
+    return result;
+    }
+    ```
+
+- **具体示例**：
+
+  ```c++
+  #include "rclcpp/rclcpp.hpp"
+  
+  class ParamServerNode : public rclcpp::Node
+  {
+  public:
+    ParamServerNode() : Node("param_server_node")
+    {
+      // 声明参数（相当于提供参数）
+      this->declare_parameter<double>("robot_speed", 1.0);
+  
+      // 注册参数修改回调
+      callback_handle_ = this->add_on_set_parameters_callback(
+        std::bind(&ParamServerNode::parameters_callback, this, std::placeholders::_1)
+      );
+  
+      RCLCPP_INFO(this->get_logger(), "参数服务器准备就绪");
+    }
+  
+  private:
+    // 参数修改回调函数
+    // 参数 parameters 是一个vector类型，包含本次参数修改请求中的所有参数（参数名 + 新值 + 类型）。这些参数还未正式写入系统，当前回调用于决定是否允许修改。
+    // 如果返回的 result.successful==true，那么系统就会修改参数
+    // 如果返回的 result.successful==false，那么系统就不修改参数
+    rcl_interfaces::msg::SetParametersResult parameters_callback(const std::vector<rclcpp::Parameter> & parameters)
+    {
+      rcl_interfaces::msg::SetParametersResult result;
+  
+      for (const auto & param : parameters)
+        if (param.get_name() == "robot_speed")
+        {
+          double value = param.as_double();
+          if (value < 0)
+          {
+            result.successful = false;
+            result.reason = "robot_speed 值在必须 大于0";
+            RCLCPP_INFO(this->get_logger(), "%s 参数非法，不修改",param.get_name().c_str());
+          }
+          else
+          {
+            result.successful = true;
+            RCLCPP_INFO(this->get_logger(), "%s 参数改变为：%.2f",param.get_name().c_str(), value);
+          }
+        }
+  
+      return result;
+    }
+  
+    OnSetParametersCallbackHandle::SharedPtr callback_handle_;
+  };
+  
+  int main(int argc, char ** argv)
+  {
+    rclcpp::init(argc, argv);
+    rclcpp::spin(std::make_shared<ParamServerNode>());
+    rclcpp::shutdown();
+    return 0;
+  }
+  ```
+
+
+
+#### Python节点的写法
+
+- **函数写法**：
+
+  - **声明参数**
+
+    ```python
+    self.declare_parameter("参数名", 默认值)
+    ```
+
+    - **参数名**：因为此时该C++节点变为了参数服务器，所以参数名自定义（但是要注意冲突）
+
+    - **默认值(可选)**：如果ROS2在传入节点的参数中都找不到对应的参数，那么就使用默认值，一般建议添加以防止节点崩溃
+
+  - **注册参数修改回调**
+
+    用于决定是否修改传入的参数值
+
+    ```python
+    # 注册参数修改回调
+    self.add_on_set_parameters_callback(
+        self.parameter_callback
+    )
+    
+    # 参数修改回调函数
+    # 参数 params 是一个list类型，包含本次参数修改请求中的所有参数（参数名 + 新值 + 类型）。这些参数还未正式写入系统，当前回调用于决定是否允许修改。
+    # 如果返回的 result.successful==true，那么系统就会修改参数
+    # 如果返回的 result.successful==false，那么系统就不修改参数
+    def parameter_callback(self, params):
+    
+        for param in params:
+            if param.name == 'robot_speed':
+    
+                value = param.value
+    
+                # 参数合法性检查
+                if value <= 0.0 or value > 5.0:
+                    return SetParametersResult(
+                        successful=False,
+                        reason="robot_speed must be in (0.0, 5.0]"
+                    )
+    
+                # 同步更新内部变量
+                self.robot_speed = value
+                self.get_logger().info(
+                    f"robot_speed 更新为 {value}"
+                )
+    
+        return SetParametersResult(successful=True)
+    ```
+
+- **具体示例**：
+
+  ```python
+  import rclpy
+  from rclpy.node import Node
+  from rcl_interfaces.msg import SetParametersResult
+  
+  class ParamServerNode(Node):
+  
+      def __init__(self):
+          super().__init__('param_server_node')
+  
+          # 声明参数（默认值 1.0）
+          self.declare_parameter('robot_speed', 1.0)
+  
+          # 注册参数修改回调
+          self.add_on_set_parameters_callback(self.parameter_callback)
+  
+          self.get_logger().info("参数服务器准备就绪")
+  
+      # 参数回调
+      def parameter_callback(self, params):
+          for param in params:
+              if param.name == 'robot_speed':
+                  value = param.value
+  
+                  # 参数合法性检查
+                  if value <= 0.0 or value > 5.0:
+                      return SetParametersResult(
+                          successful=False,
+                          reason="robot_speed 的取值范围必须在 (0.0, 5.0]"
+                      )
+  
+                  self.get_logger().info(f"robot_speed 更新为 {value}")
+  
+          return SetParametersResult(successful=True)
+  
+  
+  def main(args=None):
+      rclpy.init(args=args)
+      node = ParamServerNode()
+      rclpy.spin(node)
+      rclpy.shutdown()
+  
+  
+  if __name__ == '__main__':
       main()
   ```
 
@@ -6423,5 +6730,1584 @@ else if (type == "rrt") planner = new RRT();
   endif()
   
   ament_auto_package()
+  ```
+
+
+
+# 8 ROS2进阶
+
+## 8.1 Qos策略
+
+### 有什么Qos策略？
+
+1. `History（历史记录）`
+
+   - **Keep last（保留最近）**：只存储最多 N 条样本，可通过队列深度（queue depth）选项进行配置。
+
+   - **Keep all（保留全部）**：存储所有样本，但受到底层中间件资源限制的约束。
+
+2. `Depth（深度）`
+   - **Queue size（队列大小）**：仅在`History`策略设置为`Keep last`时生效。
+
+3. `Reliability（可靠性）`
+
+   - **Best effort（尽力而为）**：尝试传输数据样本，但如果网络不稳定，可能会丢失数据。
+
+   - **Reliable（可靠传输）**：保证样本被成功传输，必要时会进行多次重试。
+
+4. `Durability（持久性）`
+
+   - **Transient local（本地瞬态）**：发布者负责为“后续加入”的订阅者保存样本数据。
+
+   - **Volatile（易失性）**：不会尝试持久化数据。
+
+5. `Deadline（截止时间）`
+   - **Duration（时间长度）**：消息需要在截止时间之前被接收，否则可能会被丢弃。
+
+6. `Lifespan（生命周期）`
+   - **Duration（时间长度）**：从消息发布到接收之间允许的最长时间。超过该时间后，消息将被视为过期并被**静默丢弃（等同于未被接收）**。
+
+7. `Liveliness（存活性）`
+
+   - **Automatic（自动）**：当节点中的任意一个发布者发布消息时，系统会认为该节点的所有发布者在接下来的“租约时长（lease duration）”内仍然存活。
+
+   - **Manual by topic（按主题手动）**：布者需要通过调用发布者 API 手动声明其仍然存活，系统才会在新的“租约时长”内认为其存活。
+
+8. `Lease Duration（租约时长）`
+   - **Duration（时间长度）**：发布者必须在该最大时间间隔内表明自己仍然存活，否则系统将认为其失去存活性（这可能表示发生故障）。
+
+> 对于所有``非时间类型（非 duration）``的策略，还可以选择：
+>
+> - **System default（系统默认）**：使用底层中间件的默认设置。
+>
+> 对于所有``时间类型（duration）``的策略，还可以选择：
+>
+> - **Default（默认）**：表示时间未指定，底层中间件通常会将其解释为**无限长时间**。
+
+代码示例：
+
+```c++
+// 创建自定义 QoS 配置
+rclcpp::QoS qos_profile(
+    rclcpp::KeepLast(10)  							// History: Keep last, depth = 10
+);
+
+qos_profile
+  .reliable()  										// Reliability: Reliable
+  .durability_volatile()  							// Durability: Volatile
+  .deadline(100ms)  								// Deadline: 100ms
+  .lifespan(500ms)  								// Lifespan: 500ms
+  .liveliness(RMW_QOS_POLICY_LIVELINESS_AUTOMATIC)  // Liveliness: Automatic
+  .liveliness_lease_duration(1s);  					// Lease Duration: 1s
+```
+
+
+
+### Qos预设配置文件
+
+- `发布者和订阅者的默认 QoS 设置`
+
+  为了使从 ROS 1 过渡到 ROS 2 更加容易，建议执行类似的网络行为。默认情况下，ROS 2  中的发布者和订阅者具有“保持最后”的历史记录，队列大小为  10，“可靠”的可靠性，“易失”的持久性，以及“系统默认”的活跃性。截止时间、寿命和租约持续时间也均设置为“默认”。
+
+  ```c++
+  publisher_ = this->create_publisher<std_msgs::msg::String>(
+    "chatter",
+    10  // 默认深度=10
+  );
+  ```
+
+- `服务`
+
+  服务调用的Qos策略的特点：
+
+  - Reliable（必须可靠）
+  - Volatile（必须易失）。这防止服务端重启时收到了旧请求
+
+  ```c++
+  
+  service_ = this->create_service<example_interfaces::srv::AddTwoInts>(
+  		"add_two_ints",
+        	std::bind(&AddService::handle_service, this,std::placeholders::_1,std::placeholders::_2)
+          // 默认服务Qos就是Reliable且Volatile
+  );
+  
+  ```
+
+- `传感器数据`
+
+  对于传感器数据，在大多数情况下，及时收到读数比确保所有读数都到达更为重要。也就是说，开发者希望尽快收到最新样本，即使可能丢失一些。因此，传感器数据配置文件**使用尽力而为**的可靠性和**较小的队列大小**。 
+  
+  ```c++
+  subscription_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
+    "scan",
+    rclcpp::SensorDataQoS(),  // 传感器专用 QoS
+    std::bind(&NodeClass::scan_callback, this, std::placeholders::_1)
+  );
+  ```
+
+* `参数`
+
+  **ROS 2 中的参数基于服务**，因此具有相似的配置。不同之处在于参数使用更大的队列深度，以便在例如参数客户端无法连接到参数服务服务器时，请求不会丢失。 
+  
+  - 参数服务器
+  
+    ```c++
+    class ParamNode : public rclcpp::Node
+    {
+    public:
+      ParamNode() : Node("param_node")
+      {
+        this->declare_parameter("robot_speed", 1.0);
+      }
+    };
+    ```
+  
+  - 参数客户端
+  
+    ```c++
+    auto parameters_client = std::make_shared<rclcpp::SyncParametersClient>(
+      node,
+      "param_node"
+    );
+    
+    parameters_client->set_parameter(
+      rclcpp::Parameter("robot_speed", 2.0)
+    );
+    ```
+
+- `系统默认`
+
+  这使用 RMW 实现的默认值来设置所有策略。不同的 RMW 实现可能有不同的默认值，比如：
+
+  - Fast DDS
+  - Cyclone DDS
+  - Connext DDS
+
+  它们的默认 QoS 可能不同。
+  
+  ```c++
+  rclcpp::QoS qos(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_default));
+  
+  publisher_ = this->create_publisher<std_msgs::msg::String>(
+    "topic",
+    qos
+  );
+  ```
+  
+  
+
+总结：
+
+| Profile        | Reliability | Durability | Depth   | 适合场景       |
+| -------------- | ----------- | ---------- | ------- | -------------- |
+| Default        | Reliable    | Volatile   | 10      | 普通话题       |
+| Services       | Reliable    | Volatile   | 小      | 服务调用       |
+| Sensor Data    | Best Effort | Volatile   | 小      | 摄像头、雷达   |
+| Parameters     | Reliable    | Volatile   | 大      | 参数通信       |
+| System Default | RMW决定     | RMW决定    | RMW决定 | 不推荐关键系统 |
+
+代码示例：
+
+```c++
+rclcpp::QoS(rclcpp::KeepLast(10));  					// 默认Qos
+rclcpp::SensorDataQoS();								// 推荐给图像 / 激光雷达
+
+rclcpp::QoS qos = rclcpp::ServicesQoS();				// 服务使用的Qos
+rmw_qos_profile_t rmw_qos = qos.get_rmw_qos_profile();	// 服务不能直接使用rclcpp::QoS类型，只能使用rmw_qos_profile_t类型
+
+rclcpp::ParametersQoS();								// 参数服务器使用的Qos
+rclcpp::SystemDefaultsQoS();							// RMW预设
+```
+
+
+
+### Qos兼容性
+
+发布者和订阅者可以独立配置 QoS 配置文件。只有当发布者和订阅者的 QoS 配置文件兼容时，它们之间才会建立连接。
+
+QoS 配置文件兼容性基于`“请求与提供”模型`确定。
+
+- 订阅者 *请求* 它愿意接受的“`最低质量`”QoS 配置文件
+- 发布者 *提供* 它能够提供的“`最高质量`”QoS 配置文件
+
+> [!NOTE]
+>
+> - **只有当`请求`的 QoS 配置文件的每项策略都 不比 `提供`的 QoS 配置文件更严格时，才会建立连接**
+>
+>   （也就是 **发布者的话题** 要比 **订阅者的话题** 的QoS策略**更严格**）
+>
+> - 即使它们的请求 QoS 配置文件不同，多个订阅者也可以同时连接到一个发布者。
+>
+> - 发布者与订阅者之间的兼容性不受其他发布者和订阅者的存在影响。
+
+*可靠性 QoS 策略的兼容性：*
+
+| 发布者   | 订阅     | 兼容 |
+| -------- | -------- | ---- |
+| 尽力而为 | 尽力而为 | 是   |
+| 尽力而为 | 可靠     | 否   |
+| 可靠     | 尽力而为 | 是   |
+| 可靠     | 可靠     | 是   |
+
+*持久性 QoS 策略的兼容性：*
+
+| 发布者   | 订阅     | 兼容 | 结果           |
+| -------- | -------- | ---- | -------------- |
+| 易变     | 易变     | 是   | 仅新消息       |
+| 易变     | 本地瞬态 | 否   | 无通信         |
+| 本地瞬态 | 易变     | 是   | 仅新消息       |
+| 本地瞬态 | 本地瞬态 | 是   | 新消息和旧消息 |
+
+*租期持续时间的 QoS 策略兼容性：*
+
+（假设 x 和 y 是任意的有效持续时间值）
+
+| 发布者           | 订阅             | 兼容 |
+| ---------------- | ---------------- | ---- |
+| 默认（即无限长） | 默认（即无限长） | 是   |
+| 默认（即无限长） | x                | 否   |
+| x                | 默认（即无限长） | 是   |
+| x                | x                | 是   |
+| x                | y（其中 y > x）  | 是   |
+| x                | y (其中 y < x)   | 否   |
+
+
+
+## 8.2 执行器与回调组
+
+> 对应ROS2文档：https://docs.ros.org/en/kilted/Concepts/Intermediate/About-Executors.html
+
+### 执行器
+
+> `执行器`就是一个循环调度器，它不断等待事件并执行回调。
+>
+> **执行器负责**：
+>
+> - 监听底层 DDS 中是否有新消息/事件（订阅消息、定时器事件、服务请求等）
+> - 调用对应的回调
+> - 管理线程执行模型
+
+我们平时写的最简单情况：
+
+```c++
+rclcpp::spin(node);
+```
+
+其实等价于：
+
+```c++
+rclcpp::executors::SingleThreadedExecutor executor;	// 单线程执行器
+executor.add_node(node);							// 为执行器添加节点
+executor.spin();									// 执行器执行
+```
+
+
+
+#### 执行器类型
+
+ROS 2 默认提供几种 Executor：
+
+- `Single-Threaded Executor`
+
+  - 只有**一个线程**
+
+  - 回调按顺序执行
+
+  - 简单、无并发
+
+  - 默认 `rclcpp::spin(node)` 就是这种模式 
+
+- `Multi-Threaded Executor`
+
+  - 有**多个线程**
+
+  - 可以并行调用回调
+
+  - 在高负载、多订阅、多服务场景下更高效
+
+  - 并发行为由 **callback groups** 控制 
+
+
+
+#### 为什么需要多线程执行器？
+
+- 我们先来看看执行器流程是怎么样的
+
+  <img src="assets/image-20260304115123446.png" alt="image-20260304115123446" style="zoom:50%;" />
+
+- 假设我的代码中：
+
+  有一个**定时器**，定时器发布话题数据
+
+  有一个**服务**，这个服务回调处理非常耗时，需要10s的时间
+
+- 对于`单线程执行器`：
+
+  - 在没有接收服务请求时，定时器会一直发布话题数据；
+
+  - 如果某个时刻接收到了服务请求，当执行器处理这个服务请求回调函数时，该单线程执行器就会被阻塞，导致定时器的回调函数被阻塞。
+
+- 对于`多线程执行器`：
+
+  - 在没有接收服务请求时，定时器会一直发布话题数据；
+  - 如果某个时刻接收到了服务请求，执行器会新开一个线程去处理这个服务请求回调函数。执行器的主线程就不会被阻塞，就会继续调用定时器的回调函数
+
+
+
+### 回调组
+
+> Executor 根据 **callback group（回调组）** 来决定哪些回调可以同时运行
+>
+> **（一般只有多线程执行器才人为定义回调组，因为单线称执行器无论使用什么回调组效果都是一样的）**
+
+#### 回调组类型
+
+ROS 2 支持两种 Callback Group 类型：
+
+- `MutuallyExclusive（互斥）`
+
+  - 组内的所有回调不能并发执行（也就是说同一组里，同一时刻只能一个回调在执行）
+
+  - 适合保护共享资源（避免多线程访问冲突）
+
+- `Reentrant（可重入）`
+
+  - 允许组内的多个回调并发运行
+
+  - 适合**线程安全**的回调逻辑
+
+  - 可以让不同消息/事件同时处理，提高并发能力
+
+`默认回调组`：
+
+如果我们没有手动指定回调组的话：
+
+```python
+self.create_subscription(...)
+```
+
+那么这个回调会被自动放进节点的 **默认 callback group**。
+
+这个默认组通常是类似于`互斥组`的行为：
+
+- 在**单线程执行器**下，所有回调按顺序运行；
+- 在**多线程执行器**下则由**组的属性**决定是否并发。
+
+> 在`多线程执行器`中，如果要实现并发，可以：
+>
+> - 使用多个`互斥`回调组
+> - 只使用一个回调组，但该回调组必须是`可重入`
+
+
+
+### 代码示例
+
+- `单线程执行器`（无论使用什么回调组都没区别）
+
+  ```c++
+  #include "example_interfaces/srv/add_two_ints.hpp"
+  #include "rclcpp/rclcpp.hpp"
+  #include "std_msgs/msg/string.hpp"
+  #include <sstream>
+  
+  class LearnExecutorNode : public rclcpp::Node {
+  public:
+    LearnExecutorNode() : Node("learn_executor") {
+      // 定时器
+      publisher_ = this->create_publisher<std_msgs::msg::String>("string_topic", 10);
+      timer_ = this->create_wall_timer(std::chrono::seconds(1),std::bind(&LearnExecutorNode::timer_callback, this));
+  
+      // 服务
+      service_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);  // 互斥回调组
+      service_ = this->create_service<example_interfaces::srv::AddTwoInts>(
+          "add_two_ints",
+          std::bind(&LearnExecutorNode::add_two_ints_callback, this,std::placeholders::_1, std::placeholders::_2),
+          rmw_qos_profile_services_default,
+          service_callback_group_
+        );
+    }
+  
+  private:
+    // 定时器回调函数
+    void timer_callback() {
+      auto msg = std_msgs::msg::String();
+      msg.data = "话题发布：" + thread_info();
+      RCLCPP_INFO(this->get_logger(), msg.data.c_str());
+      publisher_->publish(msg);
+    }
+  
+    // 服务处理回调函数（耗时操作）
+    void add_two_ints_callback(
+        const std::shared_ptr<example_interfaces::srv::AddTwoInts::Request> request,
+        std::shared_ptr<example_interfaces::srv::AddTwoInts::Response> response
+    ) {
+      RCLCPP_INFO(this->get_logger(), "服务开始处理：%s", thread_info().c_str());
+      std::this_thread::sleep_for(std::chrono::seconds(10));
+      response->sum = request->a + request->b;
+      RCLCPP_INFO(this->get_logger(), "服务处理完成：%s", thread_info().c_str());
+    }
+  
+    // 辅助函数，用于获取线程ID
+    std::string thread_info() {
+      std::ostringstream thread_str;
+      thread_str << "线程ID：" << std::this_thread::get_id();
+      return thread_str.str();
+    }
+  
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
+    rclcpp::TimerBase::SharedPtr timer_;
+    rclcpp::Service<example_interfaces::srv::AddTwoInts>::SharedPtr service_;
+    rclcpp::CallbackGroup::SharedPtr service_callback_group_;
+  };
+  
+  int main(int argc, char *argv[]) {
+    rclcpp::init(argc, argv);
+    
+    // 创建节点
+    auto node = std::make_shared<LearnExecutorNode>();
+      
+    // 单线程执行器
+    auto executor = rclcpp::executors::SingleThreadedExecutor();
+    executor.add_node(node);	// 向执行器中添加节点
+    executor.spin();
+      
+    rclcpp::shutdown();
+    return 0;
+  }
+  ```
+
+  新开一个终端，输入：
+
+  ```bash
+  ros2 service call /add_two_ints  example_interfaces/srv/AddTwoInts "{}"
+  ```
+
+  输出结果：
+
+  ```bash
+  [INFO] [1772603474.833615036] [learn_executor]: 话题发布：线程ID：124066061438784
+  [INFO] [1772603475.833700399] [learn_executor]: 话题发布：线程ID：124066061438784	# 话题被阻塞，开始处理服务
+  [INFO] [1772603476.821650196] [learn_executor]: 服务开始处理：线程ID：124066061438784
+  # 间隔了10s
+  [INFO] [1772603486.821801788] [learn_executor]: 服务处理完成：线程ID：124066061438784
+  [INFO] [1772603486.822096728] [learn_executor]: 话题发布：线程ID：124066061438784
+  [INFO] [1772603486.833591013] [learn_executor]: 话题发布：线程ID：124066061438784
+  ```
+
+- `多线程执行器` + `互斥回调组`
+
+  ```c++
+  #include "example_interfaces/srv/add_two_ints.hpp"
+  #include "rclcpp/rclcpp.hpp"
+  #include "std_msgs/msg/string.hpp"
+  #include <sstream>
+  
+  class LearnExecutorNode : public rclcpp::Node {
+  public:
+    LearnExecutorNode() : Node("learn_executor") {
+      // 定时器
+      publisher_ = this->create_publisher<std_msgs::msg::String>("string_topic", 10);
+      timer_ = this->create_wall_timer(std::chrono::seconds(1),std::bind(&LearnExecutorNode::timer_callback, this));
+  
+      // 服务
+      service_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);  // 互斥回调组
+      service_ = this->create_service<example_interfaces::srv::AddTwoInts>(
+          "add_two_ints",
+          std::bind(&LearnExecutorNode::add_two_ints_callback, this,std::placeholders::_1, std::placeholders::_2),
+          rmw_qos_profile_services_default,
+          service_callback_group_
+        );
+    }
+  
+  private:
+    // 定时器回调函数
+    void timer_callback() {
+      auto msg = std_msgs::msg::String();
+      msg.data = "话题发布：" + thread_info();
+      RCLCPP_INFO(this->get_logger(), msg.data.c_str());
+      publisher_->publish(msg);
+    }
+  
+    // 服务处理回调函数（耗时操作）
+    void add_two_ints_callback(
+        const std::shared_ptr<example_interfaces::srv::AddTwoInts::Request> request,
+        std::shared_ptr<example_interfaces::srv::AddTwoInts::Response> response
+    ) {
+      RCLCPP_INFO(this->get_logger(), "服务开始处理：%s", thread_info().c_str());
+      std::this_thread::sleep_for(std::chrono::seconds(10));
+      response->sum = request->a + request->b;
+      RCLCPP_INFO(this->get_logger(), "服务处理完成：%s", thread_info().c_str());
+    }
+  
+    // 辅助函数，用于获取线程ID
+    std::string thread_info() {
+      std::ostringstream thread_str;
+      thread_str << "线程ID：" << std::this_thread::get_id();
+      return thread_str.str();
+    }
+  
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
+    rclcpp::TimerBase::SharedPtr timer_;
+    rclcpp::Service<example_interfaces::srv::AddTwoInts>::SharedPtr service_;
+    rclcpp::CallbackGroup::SharedPtr service_callback_group_;
+  };
+  
+  int main(int argc, char *argv[]) {
+    rclcpp::init(argc, argv);
+      
+    auto node = std::make_shared<LearnExecutorNode>();
+      
+    // 多线程执行器
+    auto executor = rclcpp::executors::MultiThreadedExecutor();
+    executor.add_node(node);	// 向执行器中添加节点
+    executor.spin();
+      
+    rclcpp::shutdown();
+    return 0;
+  }
+  ```
+
+  新开两个终端，同时输入：
+
+  ```bash
+  ros2 service call /add_two_ints  example_interfaces/srv/AddTwoInts "{}"
+  ```
+
+  输出结果：
+
+  ```bash
+  [INFO] [1772602924.578431818] [learn_executor]: 话题发布：线程ID：132972330059328
+  [INFO] [1772602925.578164300] [learn_executor]: 话题发布：线程ID：132972604319296
+  # 在这里我同时新开两个终端，同时输入ros2 service call /add_two_ints  example_interfaces/srv/AddTwoInts "{}"
+  # 因为 服务 是处于互斥回调组，所以CPU只会依次处理服务回调
+  [INFO] [1772602926.532658448] [learn_executor]: 服务开始处理：线程ID：132972514633280	  # ros2处理第一个服务调用
+  [INFO] [1772602926.578199197] [learn_executor]: 话题发布：线程ID：132972304881216		# 因为使用多线程执行器，而且话题与服务不在同一个互斥回调组，所以服务不会影响话题
+  [INFO] [1772602927.578157119] [learn_executor]: 话题发布：线程ID：132972472669760
+  [INFO] [1772602928.578154995] [learn_executor]: 话题发布：线程ID：132972363630144
+  [INFO] [1772602929.578166374] [learn_executor]: 话题发布：线程ID：132972388808256
+  [INFO] [1772602930.578149897] [learn_executor]: 话题发布：线程ID：132972372022848
+  [INFO] [1772602931.578301987] [learn_executor]: 话题发布：线程ID：132972355237440
+  [INFO] [1772602932.578308437] [learn_executor]: 话题发布：线程ID：132972338452032
+  [INFO] [1772602933.578210339] [learn_executor]: 话题发布：线程ID：132972321666624
+  [INFO] [1772602934.578221827] [learn_executor]: 话题发布：线程ID：132972705308480
+  [INFO] [1772602935.578137154] [learn_executor]: 话题发布：线程ID：132972497847872
+  [INFO] [1772602936.532846524] [learn_executor]: 服务处理完成：线程ID：132972514633280
+  [INFO] [1772602936.533479204] [learn_executor]: 服务开始处理：线程ID：132972472669760	# ros2处理第第二个服务调用
+  [INFO] [1772602936.578228471] [learn_executor]: 话题发布：线程ID：132972506240576
+  [INFO] [1772602937.578171586] [learn_executor]: 话题发布：线程ID：132972506240576
+  [INFO] [1772602938.578157765] [learn_executor]: 话题发布：线程ID：132972388808256
+  [INFO] [1772602939.578284318] [learn_executor]: 话题发布：线程ID：132972372022848
+  [INFO] [1772602940.578245165] [learn_executor]: 话题发布：线程ID：132972355237440
+  [INFO] [1772602941.578379435] [learn_executor]: 话题发布：线程ID：132972338452032
+  [INFO] [1772602942.578224311] [learn_executor]: 话题发布：线程ID：132972321666624
+  [INFO] [1772602943.578168728] [learn_executor]: 话题发布：线程ID：132972705308480
+  [INFO] [1772602944.578242898] [learn_executor]: 话题发布：线程ID：132972497847872
+  [INFO] [1772602945.578218935] [learn_executor]: 话题发布：线程ID：132972514633280
+  [INFO] [1772602946.533660923] [learn_executor]: 服务处理完成：线程ID：132972472669760
+  [INFO] [1772602946.578125631] [learn_executor]: 话题发布：线程ID：132972363630144
+  [INFO] [1772602947.578151792] [learn_executor]: 话题发布：线程ID：132972346844736
+  ```
+
+- `多线程执行器` + `可重入回调组`
+
+  ```c++
+  #include "example_interfaces/srv/add_two_ints.hpp"
+  #include "rclcpp/rclcpp.hpp"
+  #include "std_msgs/msg/string.hpp"
+  #include <sstream>
+  
+  class LearnExecutorNode : public rclcpp::Node {
+  public:
+    LearnExecutorNode() : Node("learn_executor") {
+      // 定时器
+      publisher_ = this->create_publisher<std_msgs::msg::String>("string_topic", 10);
+      timer_ = this->create_wall_timer(std::chrono::seconds(1),std::bind(&LearnExecutorNode::timer_callback, this));
+  
+      // 服务
+      service_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);  // 可重入回调组
+      service_ = this->create_service<example_interfaces::srv::AddTwoInts>(
+          "add_two_ints",
+          std::bind(&LearnExecutorNode::add_two_ints_callback, this,std::placeholders::_1, std::placeholders::_2),
+          rmw_qos_profile_services_default,
+          service_callback_group_
+        );
+    }
+  
+  private:
+    // 定时器回调函数
+    void timer_callback() {
+      auto msg = std_msgs::msg::String();
+      msg.data = "话题发布：" + thread_info();
+      RCLCPP_INFO(this->get_logger(), msg.data.c_str());
+      publisher_->publish(msg);
+    }
+  
+    // 服务处理回调函数（耗时操作）
+    void add_two_ints_callback(
+        const std::shared_ptr<example_interfaces::srv::AddTwoInts::Request> request,
+        std::shared_ptr<example_interfaces::srv::AddTwoInts::Response> response
+    ) {
+      RCLCPP_INFO(this->get_logger(), "服务开始处理：%s", thread_info().c_str());
+      std::this_thread::sleep_for(std::chrono::seconds(10));
+      response->sum = request->a + request->b;
+      RCLCPP_INFO(this->get_logger(), "服务处理完成：%s", thread_info().c_str());
+    }
+  
+    // 辅助函数，用于获取线程ID
+    std::string thread_info() {
+      std::ostringstream thread_str;
+      thread_str << "线程ID：" << std::this_thread::get_id();
+      return thread_str.str();
+    }
+  
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
+    rclcpp::TimerBase::SharedPtr timer_;
+    rclcpp::Service<example_interfaces::srv::AddTwoInts>::SharedPtr service_;
+    rclcpp::CallbackGroup::SharedPtr service_callback_group_;
+  };
+  
+  int main(int argc, char *argv[]) {
+    rclcpp::init(argc, argv);
+  
+    // 创建节点
+    auto node = std::make_shared<LearnExecutorNode>();
+  
+    // 多线程执行器
+    auto executor = rclcpp::executors::MultiThreadedExecutor();
+    executor.add_node(node);	// 向执行器中添加节点
+    executor.spin();
+  
+    rclcpp::shutdown();
+    return 0;
+  }
+  ```
+
+  新开两个终端，同时输入：
+
+  ```bash
+  ros2 service call /add_two_ints  example_interfaces/srv/AddTwoInts "{}"
+  ```
+
+  输出结果：
+
+  ```bash
+  [INFO] [1772604416.695773410] [learn_executor]: 话题发布：线程ID：127502288627264
+  [INFO] [1772604417.695710426] [learn_executor]: 话题发布：线程ID：127502185907776
+  # 在这里我同时新开两个终端，同时输入ros2 service call /add_two_ints  example_interfaces/srv/AddTwoInts "{}"
+  # 因为是可重入回调组，允许并发执行，所以多线程执行器新开两个线程
+  [INFO] [1772604418.362904115] [learn_executor]: 服务开始处理：线程ID：127502211085888	# 服务线程1
+  [INFO] [1772604418.641216446] [learn_executor]: 服务开始处理：线程ID：127502169122368	# 服务线程2
+  [INFO] [1772604418.695687405] [learn_executor]: 话题发布：线程ID：127502076868160
+  [INFO] [1772604419.695669007] [learn_executor]: 话题发布：线程ID：127502160729664
+  [INFO] [1772604420.695857524] [learn_executor]: 话题发布：线程ID：127502068475456
+  [INFO] [1772604421.695706173] [learn_executor]: 话题发布：线程ID：127502051690048
+  [INFO] [1772604422.695790200] [learn_executor]: 话题发布：线程ID：127502034904640
+  [INFO] [1772604423.695792963] [learn_executor]: 话题发布：线程ID：127502313805376
+  [INFO] [1772604424.695687952] [learn_executor]: 话题发布：线程ID：127502421073728
+  [INFO] [1772604425.695759783] [learn_executor]: 话题发布：线程ID：127502421073728
+  [INFO] [1772604426.695785529] [learn_executor]: 话题发布：线程ID：127502202693184
+  [INFO] [1772604427.695862539] [learn_executor]: 话题发布：线程ID：127502177515072
+  [INFO] [1772604428.363156805] [learn_executor]: 服务处理完成：线程ID：127502211085888	# 服务线程1
+  [INFO] [1772604428.641490642] [learn_executor]: 服务处理完成：线程ID：127502169122368	# 服务线程2
+  [INFO] [1772604428.695770416] [learn_executor]: 话题发布：线程ID：127502060082752
+  [INFO] [1772604429.695658072] [learn_executor]: 话题发布：线程ID：127502026511936
+  ```
+
+
+
+## 8.3 生命周期节点
+
+### 生命周期节点介绍
+
+#### 什么是生命周期节点？
+
+> `生命周期节点`也是ros2中的一种节点，是一种`可管理节点（Managed Node）`。内部有一个明确的**状态机**。
+
+- 普通ROS2节点：
+
+  ```c++
+  rclcpp::Node
+  ```
+
+  一启动节点就会开始：订阅、发布、处理回调
+
+- 生命周期节点：
+
+  ```c++
+  rclcpp_lifecycle::LifecycleNode
+  ```
+
+  生命周期节点是 **可管理节点（Managed Node）**，它有明确的状态机。
+
+  我们可以控制该节点：
+
+  - 什么时候初始化
+  - 什么时候开始工作
+  - 什么时候停止
+  - 什么时候释放资源
+
+#### 为什么需要生命周期？
+
+在机器人系统中，很多节点不能“随便启动就运行”：
+
+例如：
+
+- 硬件驱动
+- 控制器
+- 相机
+- 激光雷达
+- 机械臂控制节点
+
+你希望：
+
+1. 先加载参数
+2. 再初始化资源
+3. 确认成功
+4. 再开始对外发布数据
+
+这就是生命周期节点解决的问题。
+
+#### 生命周期状态机
+
+- `基本状态（稳定状态）`：
+  - unconfigured：刚创建，未分配资源，未初始化
+  - inactive：已配置完成，已分配资源，但不对外工作
+  - active：正常运行
+  - finalized：已关闭，不再可用
+- `过渡态（中间态）`：
+  - configuring
+  - activating
+  - deactivating
+  - cleaningup
+  - shuttingdown
+
+![life_cycle_sm.png](assets/life_cycle_sm.png)
+
+### 改变状态
+
+#### 使用命令行
+
++ 查看当前 生命周期节点 的状态
+
+  ```bash
+  ros2 lifecycle get /nodename
+  ```
+
+- 查看可用转换
+
+  ```bash
+  ros2 lifecycle list /nodename
+  ```
+
+- 改变状态
+
+  ```bash
+  ros2 lifecycle set /nodename configure
+  ros2 lifecycle set /nodename activate
+  ros2 lifecycle set /nodename deactivate
+  ros2 lifecycle set /nodename cleanup
+  ros2 lifecycle set /nodename shutdown
+  ```
+
+
+
+#### 代码里调用
+
+Lifecycle 节点本质是通过 service 实现状态转换。
+
+你可以创建 client 调用：
+
+```
+/节点名/change_state
+```
+
+服务类型是：
+
+```
+lifecycle_msgs/srv/ChangeState
+```
+
+c++示例：
+
+```c++
+// 创建客户端
+auto client = node->create_client<lifecycle_msgs::srv::ChangeState>("/节点名/change_state");
+
+// 构造请求
+auto request = std::make_shared<lifecycle_msgs::srv::ChangeState::Request>();
+request->transition.id = lifecycle_msgs::msg::Transition::TRANSITION_ACTIVATE;	// 表示转为activate
+
+// 发送请求
+client->async_send_request(request);
+```
+
+
+
+### 代码实现
+
+#### 实现步骤
+
+- 导入库：
+
+  ```c++
+  #include <rclcpp_lifecycle/lifecycle_node.hpp>
+  ```
+
+- 继承
+
+  ```c++
+  rclcpp_lifecycle::LifecycleNode
+  ```
+
+- 实现函数
+
+  ```c++
+  // 初始化
+  //✔ 成功 → 进入 inactive
+  //❌ 失败 → 回到 unconfigured
+  virtual CallbackReturn on_configure(const State & previous_state);
+  
+  // 释放资源
+  // ✔ 成功 → 进入 unconfigured
+  // ❌ 失败 → 进入 error 处理流程
+  virtual CallbackReturn on_cleanup(const State & previous_state);
+  
+  // 彻底结束
+  // ✔ 成功 → 进入 finalized
+  // ❌ 失败 → 进入 error 处理流程
+  virtual CallbackReturn on_shutdown(const State & previous_state);
+  
+  // 开始工作
+  // ✔ 成功 → 进入 active
+  // ❌ 失败 → 回到 inactive
+  virtual CallbackReturn on_activate(const State & previous_state);
+  
+  // 停止工作
+  // ✔ 成功 → 进入 inactive
+  // ❌ 失败 → 进入 error 处理流程
+  virtual CallbackReturn on_deactivate(const State & previous_state);
+  
+  // 故障处理
+  // ✔ 成功 → 进入 unconfigured
+  // ❌ 失败 → 进入 finalized
+  virtual CallbackReturn on_error(const State & previous_state);
+  ```
+
+  这些函数分别做什么呢？
+
+  - `on_configure()`：创建和初始化所有资源，但不开始工作。（读参数、创建 publisher、打开硬件、分配内存）
+
+  - `on_activate()`：开始真正对外运行和发布数据。（启动 timer、激活 publisher、开始控制输出）
+
+  - `on_deactivate()`：停止运行，但保留资源。（停止发布、停止控制、不释放资源）
+
+  - `on_cleanup()`：释放所有资源，回到刚创建时的状态。（销毁 publisher、关闭硬件、清空数据）
+
+  - `on_shutdown()`：彻底结束节点，做最终清理。（安全关闭、保存日志、最后释放资源）
+
+  - `on_error()`：发生异常时进行安全处理和恢复决策。（停止输出、记录错误、决定是否重置或退出）
+
+    调用时机：
+
+    - 生命周期回调返回 `FAILURE`
+
+      ```c++
+      return CallbackReturn::FAILURE;
+      ```
+
+    - 生命周期回调返回 `ERROR`
+
+      ```c++
+      return CallbackReturn::ERROR;
+      ```
+
+    - 生命周期回调内部抛出异常
+
+      ```c++
+      throw std::runtime_error("硬件初始化失败");
+      ```
+
+      **如果异常没有被捕获**，则
+
+      -> 自动进入 errorprocessing
+      -> 调用 `on_error()`
+
+
+
+#### 示例代码
+
+```c++
+#include "rclcpp/rclcpp.hpp"
+#include "rclcpp_lifecycle/lifecycle_node.hpp"
+
+using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
+class LearnLifeCycleNode : public rclcpp_lifecycle::LifecycleNode
+{
+public:
+  LearnLifeCycleNode() :
+    rclcpp_lifecycle::LifecycleNode("lifecyclenode"),  // 初始化节点
+    timer_period_(1.0)                                 // 初始化变量
+  {
+    RCLCPP_INFO(get_logger(), "%s: 已创建", get_name());
+  }
+
+protected:
+  CallbackReturn on_configure(const rclcpp_lifecycle::State &) override
+  {
+    RCLCPP_INFO(get_logger(), "on_configure(): 创建定时器资源");
+
+    timer_ = this->create_wall_timer(
+        std::chrono::seconds(static_cast<int>(timer_period_)),
+        std::bind(&LearnLifeCycleNode::timer_callback, this)
+      );
+
+    timer_->cancel();  // 先不启动
+
+    return CallbackReturn::SUCCESS;
+  }
+
+  CallbackReturn on_activate(const rclcpp_lifecycle::State &) override
+  {
+    RCLCPP_INFO(get_logger(), "on_activate(): 启动定时器");
+
+    if (timer_) {
+      timer_->reset();  // 启动定时器
+    }
+
+    return CallbackReturn::SUCCESS;
+  }
+
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State &) override
+  {
+    RCLCPP_INFO(get_logger(), "on_deactivate(): 停止定时器");
+
+    if (timer_) {
+      timer_->cancel();  // 停止但不销毁
+    }
+
+    return CallbackReturn::SUCCESS;
+  }
+
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State &) override
+  {
+    RCLCPP_INFO(get_logger(), "on_cleanup(): 释放资源");
+
+    timer_.reset();  // 真正销毁资源
+
+    return CallbackReturn::SUCCESS;
+  }
+
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State &) override
+  {
+    RCLCPP_INFO(get_logger(), "on_shutdown(): 最终清理");
+
+    timer_.reset(); // 运行到结束时调用的是on_shutdown，所以必须要释放资源
+
+    return CallbackReturn::SUCCESS;
+  }
+    
+  CallbackReturn on_error(const rclcpp_lifecycle::State & previous_state) override
+  {
+    RCLCPP_ERROR(get_logger(),"on_error(): 从状态 [%s] 进入错误处理阶段",previous_state.label().c_str());
+
+    // 防御式停止定时器
+    if (timer_) {
+      try {
+        timer_->cancel();
+      } catch (...) {
+        RCLCPP_WARN(get_logger(), "取消定时器时发生异常");
+      }
+    }
+    
+    // 尝试释放资源
+    timer_.reset();   
+
+    RCLCPP_INFO(get_logger(), "错误处理完成，返回 unconfigured 状态");
+
+    // 返回 SUCCESS -> 回到 unconfigured
+    return CallbackReturn::SUCCESS;
+  }
+
+private:
+  // 定时器回调函数
+  void timer_callback()
+  {
+    RCLCPP_INFO(get_logger(), "定时器打印进行中...");
+  }
+
+  rclcpp::TimerBase::SharedPtr timer_;
+  double timer_period_;
+};
+
+int main(int argc, char **argv)
+{
+  rclcpp::init(argc, argv);
+
+  auto node = std::make_shared<LearnLifeCycleNode>();
+
+  rclcpp::spin(node->get_node_base_interface());
+
+  rclcpp::shutdown();
+  return 0;
+}
+```
+
+
+
+## 8.4 同一进程组织多个节点运行
+
+- 一个可执行文件就对应了一个进程
+- 在之前的学习中，我们在一个可执行文件中只运行一个节点
+
+> `使用独立进程运行节点`：具备进程隔离与故障隔离的优点（一个进程挂了不会影响另外一个进程）
+>
+> `将多个节点放入一个进程`：实现更低的资源消耗和更高的进程内通信
+
+### 使用`执行器`组织多个节点
+
+- 一个执行器可以添加多个节点：
+
+  ```c++
+  int main(int argc, char *argv[]) {
+      rclcpp::init(argc, argv);
+  
+      // 创建节点
+      auto node1 = std::make_shared<Node>("node1");
+      auto node2 = std::make_shared<Node>("node2");
+  
+      // 单线程执行器
+      auto executor = rclcpp::executors::SingleThreadedExecutor();
+      executor.add_node(node1);	// 向执行器中添加节点
+      executor.add_node(node2);
+      executor.spin();
+  
+      rclcpp::shutdown();
+      return 0;
+  }
+  ```
+
+- 如果想要使用`进程内通信`，那么还需要添加：
+
+  ```c++
+  rclcpp::NodeOptions options;           // 创建节点选项
+  options.use_intra_process_comms(true); // 使用进程内通信
+  ```
+
+
+
+**示例代码**：
+
+- 发布者：
+
+  ```c++
+  class Talker : public rclcpp::Node {
+  public:
+    explicit Talker(const rclcpp::NodeOptions &options) : Node("talker", options) {
+    // 创建发布者
+    pub_ = this->create_publisher<std_msgs::msg::Int32>("count", 10);
+  
+    // 定时器回调函数
+    auto callback = [&]() -> void {
+      std_msgs::msg::Int32::UniquePtr msg(new std_msgs::msg::Int32());
+      msg->data = count_++;
+      RCLCPP_INFO(this->get_logger(), "发布数据:%d(0x%lX)", msg->data,reinterpret_cast<std::uintptr_t>(msg.get()));
+      pub_->publish(std::move(msg));
+    };
+  
+    // 定时器
+    timer_ = this->create_wall_timer(1s, callback);
+  }
+  
+  private:
+    int32_t count_;
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr pub_;
+    rclcpp::TimerBase::SharedPtr timer_;
+  };
+  ```
+
+- 接收者：
+
+  ```c++
+  class Listener : public rclcpp::Node {
+  public:
+    explicit Listener(const rclcpp::NodeOptions &options): Node("listener", options) {
+      // 创建接收者
+      sub_ = this->create_subscription<std_msgs::msg::Int32>(
+        "count", 10,
+        [&](const std_msgs::msg::Int32::UniquePtr msg) {  // 接收者回调函数
+            RCLCPP_INFO(this->get_logger(), "收到数据:%d(0x%lX)", msg->data,reinterpret_cast<std::uintptr_t>(msg.get()));
+        }
+      );
+    }
+  
+  private:
+    rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub_;
+  };
+  ```
+
+- 主函数：
+
+  ```c++
+  int main(int argc, char *argv[]) {
+    rclcpp::init(argc, argv);
+    rclcpp::executors::SingleThreadedExecutor executor;
+   
+    // 创建节点选项
+    rclcpp::NodeOptions options;           
+    options.use_intra_process_comms(true); // 使用进程内通信
+      
+    // 创建节点
+    auto talker = std::make_shared<learn_compose::Talker>(options);
+    auto listener = std::make_shared<learn_compose::Listener>(options);
+    
+    // 
+    executor.add_node(talker);
+    executor.add_node(listener);
+    executor.spin();
+  
+    rclcpp::shutdown();
+  
+    return 0;
+  }
+  ```
+
+  
+
+### 使用`组件`运行组合节点
+
+> `组件容器`：组件可以动态加入组件，也可以动态删除组件
+>
+> `组件`：把节点打包为组件
+>
+> （这是`组件`相比`执行器`的优点）
+
+#### 怎么写一个组件节点？
+
+- `CPP文件`
+
+  节点类：必须使用 NodeOptions 构造函数
+
+  ```c++
+  #include "rclcpp/rclcpp.hpp"
+  
+  class MyComponent : public rclcpp::Node
+  {
+  public:
+    explicit MyComponent(const rclcpp::NodeOptions & options)
+    : Node("my_component", options)
+    {
+      RCLCPP_INFO(this->get_logger(), "组件节点启动");
+    }
+  };
+  ```
+
+  在末尾必须**注册为组件**
+
+  ```c++
+  #include "rclcpp_components/register_node_macro.hpp"
+  
+  RCLCPP_COMPONENTS_REGISTER_NODE(MyComponent)
+  ```
+
+- `CMakeLists.txt`
+
+  ```cmake
+  find_package(rclcpp_components REQUIRED)
+  
+  add_library(my_component SHARED src/my_component.cpp)
+  
+  ament_target_dependencies(my_component
+    rclcpp
+    rclcpp_components
+  )
+  
+  rclcpp_components_register_nodes(my_component "MyComponent")
+  
+  install(TARGETS
+    my_component
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
+  )
+  ```
+
+
+
+#### 如何运行组件？
+
+##### 命令行加载
+
+- 先启动`组件容器`
+
+  <span style="color:red;">注意：组件容器没有指定名字时，默认名为 /ComponentManager</span>
+
+  ```bash
+  ros2 run rclcpp_components component_container
+  ```
+
+- 再加载组件
+
+  ```bash
+  ros2 component load /ComponentManager 包名 MyComponent
+  # 添加 -e use_intra_process_comms:=true 表示进程内通信
+  ```
+
+
+
+##### 使用 launch 文件
+
+```python
+from launch_ros.actions import ComposableNodeContainer
+from launch_ros.descriptions import ComposableNode
+
+# 定义一个组件容器
+container = ComposableNodeContainer(
+    name='my_container',
+    namespace='',
+    package='rclcpp_components',
+    executable='component_container',
+    composable_node_descriptions=[
+        # 在这里面添加组件
+        ComposableNode(
+            package='my_package',	# 包名
+            plugin='MyComponent',	# 组件名
+            name='node1'			# 为组件命名
+        ),
+    ],
+    output='screen',
+)
+```
+
+
+
+#### 具体示例
+
+- `组件1：Listener`
+
+  - listener.hpp
+
+    ```c++
+    #pragma once
+    
+    #include "rclcpp/rclcpp.hpp"
+    #include "std_msgs/msg/int32.hpp"
+    
+    namespace learn_compose {
+    
+    class Listener : public rclcpp::Node {
+    public:
+      explicit Listener(const rclcpp::NodeOptions &options);
+    
+    private:
+      rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub_;
+    };
+    
+    } // namespace learn_compose
+    ```
+
+  - listener.cpp
+
+    ```c++
+    #include "learn_compose/listener.hpp"
+    #include <chrono>
+    
+    namespace learn_compose {
+    
+    using namespace std::chrono_literals;
+    
+    Listener::Listener(const rclcpp::NodeOptions &options) : Node("listener", options) {
+        // 创建接收者
+        sub_ = this->create_subscription<std_msgs::msg::Int32>(
+          "count", 10,
+          [&](const std_msgs::msg::Int32::UniquePtr msg) {  // 接收者回调函数
+              RCLCPP_INFO(this->get_logger(), "收到数据:%d(0x%lX)", msg->data,reinterpret_cast<std::uintptr_t>(msg.get()));
+          }
+        );
+    }
+    } // namespace  learn_compose
+    
+    
+    #include "rclcpp_components/register_node_macro.hpp"
+    RCLCPP_COMPONENTS_REGISTER_NODE(learn_compose::Listener)
+    ```
+
+- `组件2：talker`
+
+  - talker.hpp
+
+    ```c++
+    #pragma once
+    
+    #include "rclcpp/rclcpp.hpp"
+    #include "std_msgs/msg/int32.hpp"
+    
+    namespace learn_compose {
+    
+    class Talker : public rclcpp::Node {
+    public:
+      explicit Talker(const rclcpp::NodeOptions &options);
+    
+    private:
+      int32_t count_;
+      rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr pub_;
+      rclcpp::TimerBase::SharedPtr timer_;
+    };
+    
+    } // namespace learn_compose
+    ```
+
+  - talker.cpp
+
+    ```c++
+    #include <chrono>
+    #include "learn_compose/talker.hpp"
+    
+    namespace learn_compose {
+    
+    using namespace std::chrono_literals;
+    
+    Talker::Talker(const rclcpp::NodeOptions &options) : Node("talker", options) {
+      // 创建发布者
+      pub_ = this->create_publisher<std_msgs::msg::Int32>("count", 10);
+    
+      // 定时器回调函数
+      auto callbacptr_t>(msg.get()));
+        pub_->publish(std::move(msg));
+      };
+    
+      // 定时器
+      timer_ = this->create_wall_timk = [&]() -> void {
+        std_msgs::msg::Int32::UniquePtr msg(new std_msgs::msg::Int32());
+        msg->data = count_++;
+        RCLCPP_INFO(this->get_logger(), "发布数据:%d(0x%lX)", msg->data,reinterpret_cast<std::uintptr_t>(msg.get()));
+        pub_->publish(std::move(msg));
+      };
+    
+      // 定时器
+      timer_ = this->create_wall_timer(1s, callback);
+    }
+    } // namespace  learn_compose
+    
+    
+    
+    #include "rclcpp_components/register_node_macro.hpp"
+    RCLCPP_COMPONENTS_REGISTER_NODE(learn_compose::Talker)
+    ```
+
+- 编译后，在终端输入命令查找组件：
+
+  <span style="color:red;">注意：记得先source工作空间</span>
+
+  ```bash
+  ros2 component types
+  ```
+
+  就会找到以下几个我们自定义的组件
+
+  ```bash
+  learn_compose
+    learn_compose::Talker
+    learn_compose::Listener
+  ```
+
+- 然后我们尝试把这两个组件加载到同一个进程
+
+  - 启动`组件容器`
+
+    <span style="color:red;">注意：组件容器没有指定名字时，默认名为 /ComponentManager</span>
+
+    ```bash
+    ros2 run rclcpp_components component_container
+    ```
+
+  - 在组件容器中添加`组件`
+
+    ```bash
+    # 添加第一个组件
+    $ ros2 component load /ComponentManager learn_compose learn_compose::Talker
+    Loaded component 1 into '/ComponentManager' container node as '/talker'
+    
+    # 添加第二个组件
+    $ ros2 component load /ComponentManager learn_compose learn_compose::Listener
+    Loaded component 2 into '/ComponentManager' container node as '/listener'
+    ```
+
+    
+
+## 8.5 调整DDS
+
+### 使用不同的DDS进行通信
+
+| 实现名称             | ROS 包                     | 底层协议    | 主要优点                           | 典型缺点             | 推荐使用场景             |
+| -------------------- | -------------------------- | ----------- | ---------------------------------- | -------------------- | ------------------------ |
+| **Fast DDS**         | `rmw_fastrtps_cpp`         | DDS / RTPS  | ✔ 默认实现✔ 社区支持好✔ 成熟稳定   | ❌ 配置默认下延迟一般 | 普通机器人应用、默认配置 |
+| **Fast DDS Dynamic** | `rmw_fastrtps_dynamic_cpp` | DDS / RTPS  | ✔ 支持动态类型（无预生成代码）     | ❌ 性能略低           | 原型开发、快速迭代       |
+| **Cyclone DDS**      | `rmw_cyclonedds_cpp`       | DDS / RTPS  | ⭐ 低延迟⭐ 小内存⭐ 默认支持共享内存 | ❓ 高度配置较少       | 实时性要求高、资源受限   |
+| **RTI Connext DDS**  | `rmw_connextdds`           | DDS / RTPS  | ⭐ 工业级品质⭐ 强 QoS 支持          | ❌ 商用授权           | 军工、医疗、航空         |
+| **GurumDDS**         | `rmw_gurumdds_cpp`         | DDS / RTPS  | ✔ DDS 实现之一                     | ❌ 社区小             | 企业定制                 |
+| **DESERT**           | `rmw_desert`               | DESERT 协议 | ✔ 用于特殊水下通信                 | ❌ 与普通 DDS 不兼容  | 水下机器人               |
+| **Zenoh DDS**        | `rmw_zenoh_cpp`            | Zenoh 协议  | ⭐ 适合数据平面优化                 | ❌ 与传统 DDS 不同栈  | 物联网 / 跨网络场景      |
+
+> [!NOTE]
+>
+> 一般来说，多个进程不支持配置多个DDS进行通讯
+
+更改DDS：
+
+```bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp	# 更改DDS为 Cyclone DDS
+```
+
+
+
+### 配置局域网通信
+
+> 在DDS中，不同逻辑网络共享物理网络的主要机制被称为`域ID（Domain ID）`
+
+**ROS2节点默认的域ID都为0**。
+
+所以当你发现某些原本能正常运作的话题突然出现了很多奇奇怪怪的BUG时，检查一下是不是域ID相同导致话题冲突。
+
+- 配置域ID：
+
+  ```bash
+  export ROS_DOMAIN_ID=1
+  ```
+
+- 限制只在本地通信：
+
+  ```bash
+  export ROS_LOCALHOST_ONLY=1
+  ```
+
+  > [!WARNING]
+  >
+  > 有多时候：
+  >
+  > - 你在一个终端中 **限制本地通讯**，然后再启动节点
+  >
+  >   ```bash
+  >   ros2 run demo_nodes_cpp talker
+  >   ```
+  >
+  > - 然后新开一个终端：输入
+  >
+  >   ```bash
+  >   $ ros2 topic list 
+  >   /parameter_events	# 竟然读取不到话题！？
+  >   /rosout
+  >   ```
+  >
+  > - 这个时候我们要先清除缓存再启动话题：
+  >
+  >   ```bash
+  >   ros2 daemon stop
+  >   ```
+
+
+
+### 调整DDS设置
+
+> 在DDS中启用`SHM`时，同机节点会自动走`共享内存`
+
+#### Fast DDS 使用共享内存
+
+- 写一个xml配置文件`fastdds_shm.xml`：
+
+  ```xml
+  <?xml version="1.0" encoding="UTF-8" ?>
+  <profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  
+    <transport_descriptors>
+      <transport_descriptor>
+        <transport_id>shm_transport</transport_id>
+        <type>SHM</type>
+      </transport_descriptor>
+    </transport_descriptors>
+  
+    <participant profile_name="default_profile" is_default_profile="true">
+      <rtps>
+        <userTransports>
+          <transport_id>shm_transport</transport_id>
+        </userTransports>
+        <useBuiltinTransports>false</useBuiltinTransports>
+      </rtps>
+    </participant>
+  
+  </profiles>
+  ```
+
+- 启用`fastdds_shm.xml`配置文件：
+
+  - **方式1**：在终端设置
+
+    ```bash
+    export FASTRTPS_DEFAULT_PROFILES_FILE=/path/to/fastdds_shm.xml
+    ```
+
+  - **方式2**：在C++中设置：
+
+    ```c++
+    #include <cstdlib>
+    
+    setenv("FASTRTPS_DEFAULT_PROFILES_FILE",
+             "/path/to/fastdds_shm.xml",
+             1);   // 1 = overwrite
+    ```
+
+  - **方式3**:在python程序设置：
+
+    ```python
+    import os
+    
+    os.environ["FASTRTPS_DEFAULT_PROFILES_FILE"] = "/path/to/fastdds_shm.xml"
+    ```
+
+  - **方式4**：在 launch 文件里设置：`（最推荐）`
+
+    ```python
+    from launch import LaunchDescription
+    from launch.actions import SetEnvironmentVariable
+    from launch_ros.actions import Node
+    
+    def generate_launch_description():
+        return LaunchDescription([
+            
+            # 设置环境变量
+            SetEnvironmentVariable(
+                name='FASTRTPS_DEFAULT_PROFILES_FILE',
+                value='/home/user/fastdds_shm.xml'
+            ),
+            
+            Node(
+                package='your_pkg',
+                executable='your_node'
+            )
+        ])
+    ```
+
+
+
+#### Cyclone DDS 使用共享内存（推荐）
+
+> Cyclone DDS 的 `SHM` 性能更好、稳定性更强。
+
+- 写一个xml配置文件`cyclonedds.xml`：
+
+  ```xml
+  <CycloneDDS>
+    <Domain id="any">
+      <SharedMemory>
+        <Enable>true</Enable>
+      </SharedMemory>
+    </Domain>
+  </CycloneDDS>
+  ```
+
+- 指定配置（跟上面一样）：
+
+  ```bash
+  export CYCLONEDDS_URI=file:///path/to/cyclonedds.xml	# 注意：file://的写法是必须的
   ```
 
