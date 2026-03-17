@@ -163,15 +163,15 @@ DDS规范是由`OMG`（Object Management Group）对象管理组织发布的。
 
 上面这张图是`ROS2的API`的实现层级，
 
-- 最下面的是第三方的DDS
+- 最下面的是`第三方的DDS`
 
-- rmw（中间件接口）层是对各家DDS的抽象层
+- `rmw（中间件接口）层`是对各家DDS的抽象层
 
-- 基于rmw实现了rclc，有了rclc，我们就可以实现各个语言的库，大家都知道C语言是各个语言的鼻祖（汇编除外）
+- 基于rmw实现了`rclc`，有了rclc，我们就可以实现各个语言的库，大家都知道**C语言是各个语言的鼻祖**（汇编除外）
 
-- 所以基于rclc，ROS2官方实现了rclpy和rclcpp
+- 所以基于rclc，ROS2官方实现了`rclpy`和`rclcpp`
 
-- 基于rclpy和rclcpp我们就可以实现上层的应用了
+- 基于rclpy和rclcpp我们就可以实现`上层应用`了
 
 
 
